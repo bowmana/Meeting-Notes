@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -12,6 +13,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Navigation;
 
 namespace MeetingNotesApp
 {
@@ -186,47 +188,51 @@ namespace MeetingNotesApp
         private async void OnFetchDatabasesClicked(object sender, RoutedEventArgs e)
         {
             string apiKey = ApiKeyBox.Password;
-            
+
             if (string.IsNullOrWhiteSpace(apiKey))
             {
+                MessageBox.Show("Please enter your Notion API key first.", "API Key Required", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            
+
+            var fetchButton = sender as Button;
             try
             {
                 // Disable the button while fetching
-                if (sender is Button button)
+                if (fetchButton != null)
                 {
-                    button.IsEnabled = false;
-                    button.Content = "Fetching...";
+                    fetchButton.IsEnabled = false;
+                    fetchButton.Content = "Fetching...";
                 }
-                
+
                 // Fetch databases from Notion API
                 var databases = await FetchNotionDatabasesAsync(apiKey);
-                
+
                 // Clear and populate the AvailableDatabases list
                 AvailableDatabases.Clear();
                 foreach (var db in databases)
                 {
                     AvailableDatabases.Add(db);
                 }
-                
-                // Re-enable the button
-                if (sender is Button btn)
+
+                if (databases.Count == 0)
                 {
-                    btn.IsEnabled = true;
-                    btn.Content = "Fetch Databases";
+                    MessageBox.Show(
+                        "No databases found. Make sure your integration has been added as a connection to at least one database in Notion.\n\n" +
+                        "In Notion: open a database page → click ••• → Add connections → select your integration.",
+                        "No Databases Found", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
             catch (Exception ex)
             {
-                // Failed to fetch databases
-                    
-                // Re-enable the button
-                if (sender is Button btn)
+                MessageBox.Show($"Failed to fetch databases from Notion:\n\n{ex.Message}", "Fetch Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (fetchButton != null)
                 {
-                    btn.IsEnabled = true;
-                    btn.Content = "Fetch Databases";
+                    fetchButton.IsEnabled = true;
+                    fetchButton.Content = "Fetch Databases";
                 }
             }
         }
@@ -236,36 +242,35 @@ namespace MeetingNotesApp
             using var httpClient = new HttpClient();
             httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             httpClient.DefaultRequestHeaders.Add("Notion-Version", "2022-06-28");
-            
+
             var databases = new List<NotionDatabase>();
             string? nextCursor = null;
-            
+
             // Fetch all databases with pagination
             do
             {
                 var requestBody = nextCursor == null
                     ? "{\"filter\":{\"value\":\"database\",\"property\":\"object\"},\"page_size\":100}"
                     : $"{{\"filter\":{{\"value\":\"database\",\"property\":\"object\"}},\"page_size\":100,\"start_cursor\":\"{nextCursor}\"}}";
-                
-                var response = await httpClient.PostAsync("https://api.notion.com/v1/search", 
+
+                var response = await httpClient.PostAsync("https://api.notion.com/v1/search",
                     new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json"));
-                
+
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
                     throw new Exception($"Notion API returned {response.StatusCode}: {errorContent}");
                 }
-                
+
                 var content = await response.Content.ReadAsStringAsync();
                 var jsonDoc = JsonDocument.Parse(content);
                 var results = jsonDoc.RootElement.GetProperty("results");
-                
+
                 foreach (var result in results.EnumerateArray())
                 {
                     var id = result.GetProperty("id").GetString() ?? "";
-                    var objectType = result.GetProperty("object").GetString() ?? "";
                     var title = "";
-                    
+
                     // Extract title from the database
                     if (result.TryGetProperty("title", out var titleArray) && titleArray.ValueKind == JsonValueKind.Array)
                     {
@@ -277,20 +282,16 @@ namespace MeetingNotesApp
                             }
                         }
                     }
-                    
-                    // Only add databases/pages that contain "Meetings" in the name
+
                     var displayName = string.IsNullOrWhiteSpace(title) ? $"Untitled ({id[..8]})" : title;
-                    if (displayName.Contains("Meetings", StringComparison.OrdinalIgnoreCase))
+                    databases.Add(new NotionDatabase
                     {
-                        databases.Add(new NotionDatabase
-                        {
-                            Name = displayName,
-                            Id = id,
-                            Type = objectType == "database" ? "Database" : "Page"
-                        });
-                    }
+                        Name = displayName,
+                        Id = id,
+                        Type = "Database"
+                    });
                 }
-                
+
                 // Check for next page
                 if (jsonDoc.RootElement.TryGetProperty("has_more", out var hasMore) && hasMore.GetBoolean())
                 {
@@ -302,79 +303,17 @@ namespace MeetingNotesApp
                 }
             }
             while (nextCursor != null);
-            
-            // Also fetch pages (in case they want to save to a page)
-            nextCursor = null;
-            do
+
+            // Sort: databases with "Meetings" in the name come first, then alphabetical
+            databases.Sort((a, b) =>
             {
-                var requestBody = nextCursor == null
-                    ? "{\"filter\":{\"value\":\"page\",\"property\":\"object\"},\"page_size\":100}"
-                    : $"{{\"filter\":{{\"value\":\"page\",\"property\":\"object\"}},\"page_size\":100,\"start_cursor\":\"{nextCursor}\"}}";
-                
-                var response = await httpClient.PostAsync("https://api.notion.com/v1/search", 
-                    new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json"));
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    var content = await response.Content.ReadAsStringAsync();
-                    var jsonDoc = JsonDocument.Parse(content);
-                    var results = jsonDoc.RootElement.GetProperty("results");
-                    
-                    foreach (var result in results.EnumerateArray())
-                    {
-                        var id = result.GetProperty("id").GetString() ?? "";
-                        var title = "";
-                        
-                        // Extract title from properties
-                        if (result.TryGetProperty("properties", out var properties))
-                        {
-                            // Look for title property
-                            foreach (var prop in properties.EnumerateObject())
-                            {
-                                if (prop.Value.TryGetProperty("title", out var titleArray) && titleArray.ValueKind == JsonValueKind.Array)
-                                {
-                                    foreach (var titleObj in titleArray.EnumerateArray())
-                                    {
-                                        if (titleObj.TryGetProperty("plain_text", out var plainText))
-                                        {
-                                            title += plainText.GetString();
-                                        }
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        // Only add pages that contain "Meetings" in the name
-                        var displayName = string.IsNullOrWhiteSpace(title) ? $"Untitled Page ({id[..8]})" : $"{title} (Page)";
-                        if (displayName.Contains("Meetings", StringComparison.OrdinalIgnoreCase))
-                        {
-                            databases.Add(new NotionDatabase
-                            {
-                                Name = displayName,
-                                Id = id,
-                                Type = "Page"
-                            });
-                        }
-                    }
-                    
-                    // Check for next page
-                    if (jsonDoc.RootElement.TryGetProperty("has_more", out var hasMore) && hasMore.GetBoolean())
-                    {
-                        nextCursor = jsonDoc.RootElement.GetProperty("next_cursor").GetString();
-                    }
-                    else
-                    {
-                        nextCursor = null;
-                    }
-                }
-                else
-                {
-                    nextCursor = null;
-                }
-            }
-            while (nextCursor != null);
-            
+                bool aMeetings = a.Name.Contains("Meeting", StringComparison.OrdinalIgnoreCase);
+                bool bMeetings = b.Name.Contains("Meeting", StringComparison.OrdinalIgnoreCase);
+                if (aMeetings && !bMeetings) return -1;
+                if (!aMeetings && bMeetings) return 1;
+                return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+            });
+
             return databases;
         }
 
@@ -453,6 +392,12 @@ namespace MeetingNotesApp
         private void OnCancelWorkspaceClicked(object sender, RoutedEventArgs e)
         {
             IsFormVisible = false;
+        }
+
+        private void OnNotionIntegrationLinkClicked(object sender, RequestNavigateEventArgs e)
+        {
+            Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+            e.Handled = true;
         }
 
         private void OnCallDetectionChanged(object sender, RoutedEventArgs e)

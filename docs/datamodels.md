@@ -144,18 +144,49 @@ A task or follow-up action identified during a meeting, with an assignee.
 
 ---
 
+## AiSettings
+
+```csharp
+// Planned for SettingsWindow.xaml.cs or a dedicated Services/ file
+public class AiSettings
+{
+    public AiMode Mode { get; set; } = AiMode.Private;          // Private (LLamaSharp) or CloudApi
+    public string CloudProvider { get; set; } = "OpenAI";        // "OpenAI", "Anthropic", "Custom"
+    public string CloudApiKey { get; set; } = "";                // User's own API key (BYOK)
+    public string CloudModel { get; set; } = "gpt-4o-mini";     // Model name for cloud provider
+    public string CloudEndpoint { get; set; } = "";              // Custom endpoint URL (when provider = "Custom")
+    public string LocalModelPath { get; set; } = "";             // Path to downloaded GGUF model file
+    public bool LocalModelDownloaded { get; set; } = false;      // Whether model has been downloaded
+    public bool UseGpu { get; set; } = true;                     // Attempt GPU acceleration (auto-fallback to CPU)
+}
+
+public enum AiMode
+{
+    Private,    // LLamaSharp — local, in-process, no data leaves device
+    CloudApi    // Cloud provider — user's API key, transcript sent to cloud
+}
+```
+
+Persisted to `appsettings.json`. Controls which AI summarization provider is used.
+
+- **Private Mode**: LLamaSharp loads a GGUF model in-process, uses `StatelessExecutor` for one-shot summarization.
+- **API Key Mode**: HttpClient calls the user's chosen cloud provider's OpenAI-compatible `/v1/chat/completions` endpoint.
+
+---
+
 ## AppSettings (static)
 
 ```csharp
 // Defined in SettingsWindow.xaml.cs
 public static class AppSettings
 {
+    public static AiSettings Ai { get; set; } = new AiSettings();
     public static void SaveSettings();
     public static void LoadSettings();
 }
 ```
 
-Static utility for persisting app-level settings to `%AppData%/MeetingNotesApp/appsettings.json`. Currently a placeholder — no settings are actively stored beyond workspaces.
+Static utility for persisting app-level settings to `%AppData%/MeetingNotesApp/appsettings.json`. Stores AI provider configuration (mode, API key, model path, GPU preference).
 
 ---
 
@@ -163,8 +194,10 @@ Static utility for persisting app-level settings to `%AppData%/MeetingNotesApp/a
 
 ```
 %AppData%/MeetingNotesApp/
-├── workspaces.json        # Configured Notion workspace integrations (includes API keys)
-└── appsettings.json       # App-level settings (currently empty placeholder)
+├── workspaces.json        # Configured Notion workspace integrations (includes Notion API keys)
+├── appsettings.json       # App-level settings (AI mode, cloud API key, model path, GPU preference)
+└── models/
+    └── Phi-4-mini-instruct-Q4_K_M.gguf   # Downloaded LLM model for Private Mode (~2.49 GB)
 ```
 
 **Note:** Meeting data (transcriptions, notes, summaries) is NOT stored locally — it is saved directly to Notion via the API.

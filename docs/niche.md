@@ -15,8 +15,8 @@
 ## What Meeting Notes Solves
 - **Automated transcription** — capture system audio and transcribe without manual typing
 - **Structured Notion storage** — notes go directly into a Notion database with proper fields
-- **AI-powered summaries** — get a structured overview + extracted action items, generated locally
-- **Privacy-first** — all processing on your machine, no audio uploaded anywhere
+- **AI-powered summaries** — get a structured overview + extracted action items, generated locally (Private Mode) or via your own cloud API key (API Key Mode)
+- **Privacy-first** — audio always stays on your machine. AI runs locally by default. Optional cloud mode puts you in control with your own API key.
 - **One-click workflow** — select database, start notes, save to Notion
 
 ## What Meeting Notes Does NOT Solve

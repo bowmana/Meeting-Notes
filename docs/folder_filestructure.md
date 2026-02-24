@@ -18,14 +18,19 @@ meeting notes/
 │
 ├── NoteTakingWindow.xaml                  # Note-taking UI: transcription, notes, summary, key points, action items
 ├── NoteTakingWindow.xaml.cs               # Code-behind: audio capture (NAudio WASAPI), speech recognition (System.Speech),
-│                                          #   AI summary (LMStudio), Notion save, duration timer
+│                                          #   AI summary (via IAiSummaryService), Notion save, duration timer
 │                                          #   Classes: NoteTakingWindow, KeyPoint, ActionItem
 │
 ├── SettingsWindow.xaml                    # Settings UI: workspace management, AI config, call detection, general settings
-├── SettingsWindow.xaml.cs                 # Code-behind: Notion API workspace CRUD, database fetch, LMStudio test,
+├── SettingsWindow.xaml.cs                 # Code-behind: Notion API workspace CRUD, database fetch, AI provider config,
 │                                          #   workspace persistence (JSON), settings save/load
 │                                          #   Classes: SettingsWindow, SerializableWorkspace, NotionWorkspaceIntegration,
-│                                          #            NotionDatabase, AppSettings (static)
+│                                          #            NotionDatabase, AppSettings (static), AiSettings, AiMode (enum)
+│
+├── LLamaSharpDebugWindow.xaml            # Debug panel: model download banner, model loading, inference testing, streaming output
+├── LLamaSharpDebugWindow.xaml.cs         # Code-behind: model detection + download from Hugging Face with progress,
+│                                          #   LLamaWeights model loading, StatelessExecutor inference,
+│                                          #   DefaultSamplingPipeline config, async streaming tokens, resource disposal
 │
 ├── Styles/                                # XAML resource dictionaries
 │   ├── Colors.xaml                        # Color palette: primary (grey-green), backgrounds (dark), text, status colors
@@ -38,7 +43,7 @@ meeting notes/
 ├── docs/                                  # Project documentation
 │   ├── README.md                          # Project overview for docs folder
 │   ├── goals.md                           # Product goals, scope, non-goals, success metrics
-│   ├── techstack.md                       # Tech stack decisions (.NET 8, WPF, NAudio, System.Speech, LMStudio, Notion API)
+│   ├── techstack.md                       # Tech stack decisions (.NET 8, WPF, NAudio, System.Speech, LLamaSharp, Notion API)
 │   ├── features.md                        # Feature specifications (all windows and interactions)
 │   ├── datamodels.md                      # Data models, classes, storage schema, Notion database schema
 │   ├── ui.md                              # UI design, color system, window layouts, user flows
@@ -48,7 +53,22 @@ meeting notes/
 │   ├── checklist.md                       # Development progress tracker (living document)
 │   ├── lessons.md                         # Lessons learned — bugs, failed approaches, patterns to avoid
 │   ├── dev-workflow.md                    # Build instructions, prerequisites, development workflow
-│   └── folder_filestructure.md            # This file
+│   ├── folder_filestructure.md            # This file
+│   └── llamasharp/                        # LLamaSharp reference documentation
+│       ├── README.md                      # Documentation index
+│       ├── overview.md                    # LLamaSharp overview and features
+│       ├── gettingstarted.md              # Installation and first run
+│       ├── architecture.md                # Architecture (LLamaModel → Executors → ChatSession)
+│       ├── basicusage.md                  # ChatSession basic usage
+│       ├── ModelParameters.md             # ModelParams reference (ContextSize, GpuLayerCount, etc.)
+│       ├── inferenceparameters.md         # InferenceParams reference (MaxTokens, Temperature, etc.)
+│       ├── text-to-text-apis.md           # ILLamaExecutor interface (Infer, InferAsync)
+│       ├── differencesofexecutors.md      # Interactive vs Instruct vs Stateless executors
+│       ├── statelessexecutor.md           # StatelessExecutor example (our primary executor)
+│       ├── quantization.md                # Model quantization
+│       ├── logger.md                      # Custom ILLamaLogger for WPF
+│       ├── transforms.md                  # Input/output/history transforms
+│       └── apireference.md                # Full API reference index
 │
 ├── bin/                                   # Build output (git-ignored)
 └── obj/                                   # Build intermediates (git-ignored)
@@ -58,8 +78,13 @@ meeting notes/
 
 ```
 %AppData%/MeetingNotesApp/
-├── workspaces.json        # Configured Notion workspace integrations (API keys, selected databases)
-└── appsettings.json       # App-level settings (currently placeholder)
+├── workspaces.json        # Configured Notion workspace integrations (Notion API keys, selected databases)
+└── appsettings.json       # App-level settings (AI mode, cloud API key, model path, GPU preference)
+
+%LocalAppData%/MeetingNotesApp/
+└── models/
+    └── Phi-4-mini-instruct-Q4_K_M.gguf   # Downloaded LLM model for Private Mode (~2.49 GB)
+    # Note: Uses LocalAppData (not Roaming AppData) to avoid syncing 2.5 GB on corporate networks
 ```
 
 ## Tech Stack
@@ -68,16 +93,16 @@ meeting notes/
 - **WPF** — UI Framework
 - **NAudio 2.2.1** — System audio capture (WASAPI loopback)
 - **System.Speech 8.0** — Windows speech recognition
-- **LMStudio** — Local LLM for AI summaries (meta-llama-3.1-8b-instruct)
+- **LLamaSharp 0.26.0** — In-process LLM inference for Private Mode (+ Backend.Cpu / Backend.Cuda12)
 - **Notion REST API** — Note storage and retrieval
 
 ## Architecture Overview
 
 | Layer | Description |
 |-------|-------------|
-| **Windows** | WPF windows with code-behind + INotifyPropertyChanged (MainWindow, NoteTakingWindow, SettingsWindow, MeetingSetupWindow) |
+| **Windows** | WPF windows with code-behind + INotifyPropertyChanged (MainWindow, NoteTakingWindow, SettingsWindow, MeetingSetupWindow, LLamaSharpDebugWindow) |
 | **Models** | Inline classes: MeetingInfo, NotionWorkspaceIntegration, NotionDatabase, DetectedApp, RecentNote, KeyPoint, ActionItem |
-| **APIs** | Notion REST API (HttpClient), LMStudio OpenAI-compatible API (HttpClient) |
+| **APIs** | Notion REST API (HttpClient), Cloud AI provider OpenAI-compatible API (HttpClient, API Key Mode only) |
 | **Audio** | NAudio WasapiLoopbackCapture → WAV conversion → System.Speech SpeechRecognitionEngine |
 | **Persistence** | JSON files in %AppData%/MeetingNotesApp/ for workspace config |
 
@@ -85,7 +110,7 @@ meeting notes/
 
 | Class/Window | Key Dependencies |
 |-------------|-----------------|
-| MainWindow | NotionWorkspaceIntegration, NotionDatabase, RecentNote, HttpClient (Notion API) |
-| NoteTakingWindow | MeetingInfo, NAudio (WasapiLoopbackCapture, AudioFileReader, MediaFoundationResampler), System.Speech (SpeechRecognitionEngine, DictationGrammar), HttpClient (LMStudio + Notion API) |
-| SettingsWindow | NotionWorkspaceIntegration, NotionDatabase, SerializableWorkspace, AppSettings, HttpClient (Notion API + LMStudio) |
+| MainWindow | NotionWorkspaceIntegration, NotionDatabase, RecentNote, HttpClient (Notion API), LLamaSharpDebugWindow |
+| NoteTakingWindow | MeetingInfo, NAudio (WasapiLoopbackCapture, AudioFileReader, MediaFoundationResampler), System.Speech (SpeechRecognitionEngine, DictationGrammar), IAiSummaryService, HttpClient (Notion API) |
+| SettingsWindow | NotionWorkspaceIntegration, NotionDatabase, SerializableWorkspace, AppSettings, AiSettings, HttpClient (Notion API) |
 | MeetingSetupWindow | MeetingInfo, NotionWorkspaceIntegration |

@@ -21,6 +21,7 @@
 - [x] Status bar with color-coded indicator
 - [x] Database selection dropdown (populated from all workspaces)
 - [x] "Start Notes" button → opens NoteTakingWindow
+- [x] Redesign "Save Note" → "Start a Meeting" with two-state UX (empty state + connected state), connection indicator, validation errors, and "Connect Notion" button
 - [x] Test functions section (Simulate Call, Test Notion, Start Meeting)
 - [x] Recent Notes list (fetched from Notion API)
 - [x] Click recent note → opens Notion page in browser
@@ -45,11 +46,10 @@
 - [x] Speech recognized → append to transcription area
 - [x] Recording state management (start/stop)
 
-### AI Summarization
-- [x] LMStudio integration via OpenAI-compatible API
+### AI Summarization (v0.1 — LMStudio, replaced in v0.1.5)
+- [x] LMStudio integration via OpenAI-compatible API (replaced by LLamaSharp + Cloud API in v0.1.5)
 - [x] Structured prompt for meeting overview + action items
 - [x] Generate summary from transcription + manual notes
-- [x] Fallback to simple text truncation if LMStudio unavailable
 - [x] Manual notes appended to summary output
 
 ### Notion Integration
@@ -61,18 +61,53 @@
 ### Settings Window
 - [x] Notion workspace add/edit/delete
 - [x] API key input (PasswordBox)
-- [x] Fetch databases from Notion API (search, filtered to "Meetings")
+- [x] Fetch databases from Notion API (search, shows all databases — "Meeting" sorted to top)
 - [x] Database selection dropdown
 - [x] Workspace persistence (JSON file)
-- [x] LMStudio connection test button
+- [x] LMStudio connection test button (replaced by AI provider tests in v0.1.5)
 - [x] Call detection master toggle
 - [x] Per-app detection toggles (Teams, Zoom, Meet, Discord)
 - [x] General settings checkboxes (start minimized, auto-save, notifications)
+- [x] Add helper text and Notion integration link to Add Workspace form for better onboarding UX
 
 ### Meeting Setup Window
 - [x] Workspace selection dropdown
 - [x] Meeting info form (date, title, organizer, attendees, comments)
 - [x] Start Taking Notes / Cancel buttons
+
+---
+
+## v0.1.5 — AI Provider Architecture
+
+### Private Mode (LLamaSharp — Local AI)
+- [x] Add LLamaSharp NuGet package (core)
+- [x] Add LLamaSharp.Backend.Cpu NuGet package
+- [x] Add LLamaSharp.Backend.Cuda12 NuGet package
+- [x] LLamaSharp debug panel (LLamaSharpDebugWindow — model loading, StatelessExecutor inference, streaming output)
+- [~] Implement model download manager (download Phi-4-mini Q4_K_M GGUF from Hugging Face to %LocalAppData%/models/)
+- [x] Model download UI in debug panel (progress bar, cancel button, download status, inline banner with state transitions)
+- [x] Notion sync from debug panel (structured output parsing → Notion blocks: heading_2, bulleted_list_item, to_do, paragraph with 2000-char splitting)
+- [ ] Implement `IAiSummaryService` interface (provider-agnostic abstraction)
+- [ ] Implement `LLamaSharpSummaryService` (load model, `StatelessExecutor`, stream tokens via `InferAsync`)
+- [ ] GPU auto-detection via `NativeLibraryConfig.WithCuda(true).WithAutoFallback(true)`
+- [ ] Singleton model lifecycle (lazy load on first summary, dispose on app exit)
+- [ ] Handle long transcripts (chunked summarization for transcripts exceeding ~12,000 chars)
+- [ ] Streaming token output to AI Summary text area during generation
+
+### API Key Mode (Cloud — Opt-In)
+- [ ] Implement `CloudApiSummaryService` (OpenAI-compatible HTTP calls with user API key)
+- [ ] Provider dropdown support (OpenAI, Anthropic, custom endpoint)
+- [ ] API key input UI (PasswordBox, stored in appsettings.json)
+- [ ] Privacy disclosure banner when user selects API Key Mode
+
+### Settings & Infrastructure
+- [ ] AI Provider settings section in Settings window (Private Mode / API Key Mode toggle)
+- [ ] Private Mode UI: model download status, GPU detection status, "Test Local AI" button
+- [ ] API Key Mode UI: provider dropdown, API key field, model name field, "Test Cloud AI" button
+- [ ] Persist AI settings to appsettings.json (mode, provider, API key, model path, GPU preference)
+- [ ] Replace LMStudio HTTP calls in NoteTakingWindow with `IAiSummaryService`
+- [ ] Remove LMStudio-specific test button (replace with generic "Test AI Connection")
+- [ ] Remove `SummarizeTextFallback()` — no fallback logic per CLAUDE.md rules
 
 ---
 

@@ -1,0 +1,332 @@
+<Window x:Class="MeetingNotesApp.LLamaSharpDebugWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="LLamaSharp Debug" Height="800" Width="900"
+        Background="{DynamicResource LightBrush}"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{DynamicResource PrimaryBrush}" Padding="20,12">
+            <TextBlock Text="LLamaSharp Debug Panel"
+                       Foreground="{DynamicResource WhiteBrush}"
+                       FontSize="20"
+                       FontWeight="Bold"/>
+        </Border>
+
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1" Padding="20">
+            <StackPanel>
+
+                <!-- Model Section -->
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        CornerRadius="10"
+                        Padding="20"
+                        Margin="0,0,0,15">
+                    <StackPanel>
+                        <TextBlock Text="Model" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
+
+                        <!-- Model Path -->
+                        <TextBlock Text="Model Path (.gguf)" FontSize="13" Margin="0,0,0,5"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="ModelPathTextBox"
+                                     Grid.Column="0"
+                                     FontSize="13"
+                                     Padding="8,6"
+                                     IsReadOnly="True"
+                                     Text="No model selected"/>
+                            <Button x:Name="BrowseButton"
+                                    Grid.Column="1"
+                                    Content="Browse..."
+                                    Click="OnBrowseModelClicked"
+                                    Padding="15,6"
+                                    Margin="8,0,0,0"/>
+                        </Grid>
+
+                        <!-- Download Banner -->
+                        <Border x:Name="DownloadBanner"
+                                Background="{DynamicResource SurfaceElevatedBrush}"
+                                CornerRadius="8"
+                                Padding="0"
+                                Margin="0,0,0,15"
+                                Visibility="Collapsed">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="4"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Colored left accent bar -->
+                                <Border x:Name="BannerAccentBar"
+                                        Grid.Column="0"
+                                        Background="{DynamicResource InfoBrush}"
+                                        CornerRadius="8,0,0,8"/>
+
+                                <!-- Banner content -->
+                                <StackPanel Grid.Column="1" Margin="16,14,16,14">
+                                    <TextBlock x:Name="BannerHeadline"
+                                               Text="AI model not found"
+                                               FontSize="14"
+                                               FontWeight="Bold"
+                                               Margin="0,0,0,6"/>
+
+                                    <TextBlock x:Name="BannerBody"
+                                               TextWrapping="Wrap"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               Margin="0,0,0,10"/>
+
+                                    <!-- Progress area (visible only during download) -->
+                                    <StackPanel x:Name="DownloadProgressPanel" Visibility="Collapsed" Margin="0,0,0,10">
+                                        <ProgressBar x:Name="DownloadProgressBar"
+                                                     Height="8"
+                                                     Minimum="0"
+                                                     Maximum="100"
+                                                     Value="0"
+                                                     Margin="0,0,0,6"
+                                                     Background="{DynamicResource Gray300Brush}"
+                                                     Foreground="{DynamicResource PrimaryBrush}"/>
+                                        <TextBlock x:Name="DownloadProgressText"
+                                                   Text="Starting download..."
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    </StackPanel>
+
+                                    <!-- Action buttons -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <Button x:Name="DownloadModelButton"
+                                                Content="Download Model"
+                                                Click="OnDownloadModelClicked"
+                                                Padding="15,8"
+                                                FontWeight="Bold"
+                                                Background="{DynamicResource PrimaryBrush}"
+                                                Margin="0,0,10,0"/>
+                                        <Button x:Name="CancelDownloadButton"
+                                                Content="Cancel Download"
+                                                Click="OnCancelDownloadClicked"
+                                                Padding="15,8"
+                                                Background="{DynamicResource ErrorBrush}"
+                                                Visibility="Collapsed"/>
+                                    </StackPanel>
+
+                                    <TextBlock x:Name="BannerHelperText"
+                                               FontSize="11"
+                                               FontStyle="Italic"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Model Parameters -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <StackPanel Margin="0,0,20,0">
+                                <TextBlock Text="Context Size" FontSize="12" Margin="0,0,0,3"/>
+                                <TextBox x:Name="ContextSizeTextBox"
+                                         Text="4096"
+                                         Width="100"
+                                         FontSize="13"
+                                         Padding="8,6"/>
+                            </StackPanel>
+                            <StackPanel Margin="0,0,20,0">
+                                <TextBlock Text="GPU Layers (-1 = all)" FontSize="12" Margin="0,0,0,3"/>
+                                <TextBox x:Name="GpuLayerCountTextBox"
+                                         Text="-1"
+                                         Width="100"
+                                         FontSize="13"
+                                         Padding="8,6"/>
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="Seed" FontSize="12" Margin="0,0,0,3"/>
+                                <TextBox x:Name="SeedTextBox"
+                                         Text="1337"
+                                         Width="100"
+                                         FontSize="13"
+                                         Padding="8,6"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Load Button + Status -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                            <Button x:Name="LoadModelButton"
+                                    Content="Load Model"
+                                    Click="OnLoadModelClicked"
+                                    Padding="15,8"
+                                    FontWeight="Bold"
+                                    Background="{DynamicResource PrimaryBrush}"
+                                    Margin="0,0,15,0"/>
+                            <Button x:Name="UnloadModelButton"
+                                    Content="Unload"
+                                    Click="OnUnloadModelClicked"
+                                    Padding="15,8"
+                                    IsEnabled="False"/>
+                        </StackPanel>
+                        <TextBlock x:Name="ModelStatusText"
+                                   Text="No model loaded"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Margin="0,5,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Inference Section -->
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        CornerRadius="10"
+                        Padding="20"
+                        Margin="0,0,0,15">
+                    <StackPanel>
+                        <TextBlock Text="Inference" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
+
+                        <!-- Prompt -->
+                        <TextBlock Text="Prompt" FontSize="13" Margin="0,0,0,5"/>
+                        <TextBox x:Name="PromptTextBox"
+                                 FontSize="13"
+                                 Padding="8,6"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Height="120"
+                                 Text="&lt;|system|&gt;You are a helpful assistant that summarizes meeting transcripts into structured sections. Always use these exact section headers on their own line:&#x0a;&#x0a;SUMMARY:&#x0a;(Write a brief overview paragraph)&#x0a;&#x0a;KEY POINTS:&#x0a;- (Each key point as a bullet starting with &quot;- &quot;)&#x0a;&#x0a;ACTION ITEMS:&#x0a;- [ ] (Each action item as a checkbox starting with &quot;- [ ] &quot;)&#x0a;&#x0a;Include all three sections. Write &quot;None&quot; for empty sections.&lt;|end|&gt;&#x0a;&lt;|user|&gt;Summarize the following meeting transcript:&#x0a;&#x0a;Transcript:&#x0a;John: Welcome everyone to the weekly standup. Let's go around the room.&#x0a;Sarah: I finished the authentication module yesterday. Today I'll start on the API endpoints.&#x0a;Mike: I'm blocked on the database migration. Need help from Sarah after standup.&#x0a;John: Okay, Sarah and Mike sync up after this. Anything else? Great, let's wrap up.&lt;|end|&gt;&#x0a;&lt;|assistant|&gt;"/>
+
+                        <!-- Inference Parameters -->
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,10">
+                            <StackPanel Margin="0,0,20,0">
+                                <TextBlock Text="Temperature" FontSize="12" Margin="0,0,0,3"/>
+                                <TextBox x:Name="TemperatureTextBox"
+                                         Text="0.3"
+                                         Width="80"
+                                         FontSize="13"
+                                         Padding="8,6"/>
+                            </StackPanel>
+                            <StackPanel Margin="0,0,20,0">
+                                <TextBlock Text="Max Tokens" FontSize="12" Margin="0,0,0,3"/>
+                                <TextBox x:Name="MaxTokensTextBox"
+                                         Text="512"
+                                         Width="80"
+                                         FontSize="13"
+                                         Padding="8,6"/>
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="Anti-Prompts (comma-sep)" FontSize="12" Margin="0,0,0,3"/>
+                                <TextBox x:Name="AntiPromptsTextBox"
+                                         Text="&lt;|end|&gt;,&lt;|user|&gt;,Transcript:,\n\n\n"
+                                         Width="200"
+                                         FontSize="13"
+                                         Padding="8,6"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Run Buttons -->
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="RunInferenceButton"
+                                    Content="Run Inference"
+                                    Click="OnRunInferenceClicked"
+                                    Padding="15,8"
+                                    FontWeight="Bold"
+                                    Background="{DynamicResource PrimaryBrush}"
+                                    IsEnabled="False"
+                                    Margin="0,0,10,0"/>
+                            <Button x:Name="CancelButton"
+                                    Content="Cancel"
+                                    Click="OnCancelClicked"
+                                    Padding="15,8"
+                                    IsEnabled="False"
+                                    Margin="0,0,10,0"/>
+                            <Button Content="Clear Output"
+                                    Click="OnClearOutputClicked"
+                                    Padding="15,8"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Output Section -->
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        CornerRadius="10"
+                        Padding="20"
+                        Margin="0,0,0,15">
+                    <StackPanel>
+                        <TextBlock Text="Output" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
+
+                        <TextBox x:Name="OutputTextBox"
+                                 FontSize="13"
+                                 Padding="8,6"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Height="200"
+                                 FontFamily="Consolas"/>
+
+                        <TextBlock x:Name="InferenceStatsText"
+                                   Text=""
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Margin="0,8,0,0"/>
+
+                        <!-- Notion Sync Panel -->
+                        <Border x:Name="NotionSyncPanel"
+                                Background="{DynamicResource SurfaceElevatedBrush}"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,12,0,0"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="Sync to Notion"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8"/>
+
+                                <!-- Workspace + Database Row -->
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Workspace:"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="NotionWorkspaceComboBox"
+                                              Width="250"
+                                              DisplayMemberPath="WorkspaceName"
+                                              SelectionChanged="OnNotionWorkspaceSelectionChanged"/>
+                                    <TextBlock Text="Database:"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Margin="15,0,8,0"/>
+                                    <TextBlock x:Name="SelectedDatabaseText"
+                                               Text="(none)"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </StackPanel>
+
+                                <!-- Sync Button + Status -->
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="SyncToNotionButton"
+                                            Content="Sync to Notion"
+                                            Click="OnSyncToNotionClicked"
+                                            Padding="15,8"
+                                            FontWeight="Bold"
+                                            Background="{DynamicResource PrimaryBrush}"
+                                            IsEnabled="False"
+                                            Margin="0,0,10,0"/>
+                                    <TextBlock x:Name="NotionSyncStatusText"
+                                               Text=""
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>

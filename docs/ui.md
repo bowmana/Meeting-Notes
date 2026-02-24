@@ -49,11 +49,17 @@
 +--- Meeting Notes ----------------------------[⚙]--+
 | [●] Ready — Waiting for calls to be detected      |
 |                                                     |
-| ┌─ Save Note ────────────────────────────────────┐ |
-| │ Select database: [Dropdown ▼]                   │ |
-| │ [Start Notes]                                   │ |
-| │ Configure workspace integrations in Settings    │ |
-| └─────────────────────────────────────────────────┘ |
+| ┌─ Start a Meeting ─────────────────────────────────┐ |
+| │ ● Notion connected · My Workspace                 │ |
+| │ Save notes to: [Dropdown ▼]                       │ |
+| │ [Start Meeting]                                    │ |
+| │                                                    │ |
+| │ (or if not connected:)                             │ |
+| │ Connect to Notion                                  │ |
+| │ Your meeting notes will be saved to a Notion       │ |
+| │ database. Connect your workspace to get started.   │ |
+| │ [Connect Notion]                                   │ |
+| └────────────────────────────────────────────────────┘ |
 |                                                     |
 | ┌─ Test Functions ───────────────────────────────┐ |
 | │ [Simulate Call] [Test Notion] [Start Meeting]  │ |
@@ -125,8 +131,19 @@
 | └─────────────────────────────────────────────────┘ |
 |                                                     |
 | ┌─ AI Settings ──────────────────────────────────┐ |
-| │ LMStudio: http://127.0.0.1:1234               │ |
-| │ [Test LMStudio Connection]                     │ |
+| │ AI Mode: (●) Private Mode  ( ) API Key Mode   │ |
+| │                                                 │ |
+| │ ── Private Mode (Local AI) ──────────────────  │ |
+| │ Model: Phi-4-mini ● Downloaded (2.49 GB)       │ |
+| │ GPU: ● NVIDIA RTX 4060 detected                │ |
+| │ [Test Local AI]                                 │ |
+| │                                                 │ |
+| │ ── API Key Mode (Cloud AI) ──────────────────  │ |
+| │ ⚠ Transcript text will be sent to provider     │ |
+| │ Provider: [OpenAI ▼]                            │ |
+| │ API Key: [********]                             │ |
+| │ Model: [gpt-4o-mini]                            │ |
+| │ [Test Cloud AI]                                 │ |
 | └─────────────────────────────────────────────────┘ |
 |                                                     |
 | ┌─ Call Detection Settings ──────────────────────┐ |
@@ -153,9 +170,10 @@
 
 ### Start a Meeting Note
 1. User opens app → Main Window
-2. Selects a Notion database from dropdown
-3. Clicks "Start Notes"
-4. NoteTakingWindow opens with selected workspace/database
+2. If Notion is not connected: clicks "Connect Notion" → Settings opens → user adds workspace → returns to Main Window
+3. Selects a Notion database from dropdown
+4. Clicks "Start Meeting"
+5. NoteTakingWindow opens with selected workspace/database
 5. User clicks "Start Recording" to capture audio
 6. User takes manual notes alongside transcription
 7. User clicks "Stop Recording" when done

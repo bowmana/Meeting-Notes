@@ -14,10 +14,12 @@ The primary interface. Shows monitoring status, database selection, test functio
 - Color-coded status indicator (gray=Ready, green=Monitoring, blue=Recording)
 - Status text + description (e.g., "Monitoring — Listening for calls from Teams, Zoom, and Meet")
 
-### Save Note Section
-- Database dropdown (populated from all configured Notion workspaces)
-- "Start Notes" button — opens NoteTakingWindow with selected database
-- Helper text pointing to Settings for workspace configuration
+### Start a Meeting Section
+Two-state design with progressive disclosure:
+- **Not Connected state** (no workspaces/databases configured): Shows "Connect to Notion" prompt with plain-language explanation and a "Connect Notion" button that opens Settings directly
+- **Connected state** (databases available): Shows green connection indicator with workspace name, "Save notes to:" database dropdown, and "Start Meeting" button
+- Validation error shown inline (red text) if user clicks "Start Meeting" without selecting a database
+- Error clears automatically when user selects a database
 
 ### Test Functions Section
 - "Simulate Call Detection" — sets status to Recording
@@ -51,9 +53,10 @@ The core note-taking experience. Opens when user starts a new meeting.
 
 ### AI Summary
 - Read-only text area displaying generated summary
-- "Generate Summary" button sends transcription + manual notes to LMStudio
+- AI mode indicator showing "Private" (green) or "Cloud" (blue) based on active provider
+- "Generate Summary" button sends transcription + manual notes to the configured AI provider
+- Tokens stream to the text area in real-time during generation (Private Mode)
 - Structured output: Meeting Overview + Action Items
-- Fallback: simple truncation if LMStudio is unavailable
 
 ### Key Points
 - Checklist of important discussion points
@@ -70,7 +73,7 @@ The core note-taking experience. Opens when user starts a new meeting.
 ### Bottom Actions
 - "Stop Recording" — stops transcription timer and audio capture
 - "Save to Notion" — creates a new page in the selected Notion database with all fields
-- "Generate Summary" — triggers AI summarization via LMStudio
+- "Generate Summary" — triggers AI summarization via configured provider (Private Mode or API Key Mode)
 
 ### Notion Save Properties
 | Notion Property | Source |
@@ -126,8 +129,27 @@ Configuration hub for all integrations and preferences.
 - Workspaces persist to `%AppData%/MeetingNotesApp/workspaces.json`
 
 ### AI Settings
-- LMStudio configuration info (http://127.0.0.1:1234, meta-llama-3.1-8b-instruct)
-- "Test LMStudio Connection" button — sends test prompt, shows success/failure dialog
+
+#### AI Mode Toggle
+- **Private Mode (Local)** — default, all AI processing on-device via LLamaSharp
+- **API Key Mode (Cloud)** — opt-in, uses user's own API key for cloud LLM provider
+
+#### Private Mode Section (shown when Private Mode selected)
+- Model status: "Downloaded" / "Not downloaded" / "Downloading... X%"
+- "Download Model" button (downloads Phi-4-mini Q4_K_M, 2.49 GB, from Hugging Face)
+- Download progress bar with cancel button
+- GPU detection status: "NVIDIA GPU detected — using GPU acceleration" or "No GPU detected — using CPU (summaries may take 15-30 seconds)"
+- "Test Local AI" button — runs a short test inference, shows success/failure dialog
+- Performance note: "Private Mode keeps all data on your device. Summaries take ~15-30s on CPU, ~3s with GPU."
+
+#### API Key Mode Section (shown when API Key Mode selected)
+- Privacy disclosure banner: "In API Key Mode, your meeting transcript text (not audio) is sent to the selected cloud provider for summarization. Audio always stays on your device."
+- Provider dropdown: OpenAI, Anthropic, Custom Endpoint
+- API key input (PasswordBox)
+- Model name field (e.g., "gpt-4o-mini", "claude-haiku-4-5")
+- Custom endpoint URL field (shown only when "Custom Endpoint" selected)
+- "Test Cloud AI" button — sends test prompt to configured endpoint, shows success/failure dialog
+- Performance note: "API Key Mode sends transcript text to the cloud. Summaries are faster and higher quality, but data leaves your device."
 
 ### Call Detection Settings
 - Master toggle: Enable/disable automatic call detection

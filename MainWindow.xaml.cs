@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -26,6 +28,15 @@ namespace MeetingNotesApp
         private static ObservableCollection<RecentNote> _recentNotes = new ObservableCollection<RecentNote>();
         private NotionDatabase _selectedDatabase;
         private ObservableCollection<NotionDatabase> _availableDatabases;
+        private bool _hasDatabases = false;
+        private string _connectedWorkspaceSummary = "";
+        private bool _isDetectionBannerVisible = false;
+        private string _detectionBannerTitle = "";
+        private string _detectionBannerMessage = "";
+        private Brush _detectionBannerColor = Brushes.Transparent;
+        private bool _detectionFoundApps = false;
+        private CallDetectionService _callDetectionService;
+        private bool _userStartedNotes = false;
 
         public MainWindow()
         {
@@ -58,15 +69,18 @@ namespace MeetingNotesApp
             // Set up list boxes and combo boxes
             RecentNotesListBox.ItemsSource = RecentNotes;
             DatabaseComboBox.ItemsSource = AvailableDatabases;
-            
-            // Force black text color on DatabaseComboBox
-            DatabaseComboBox.Loaded += (s, e) => {
-                DatabaseComboBox.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Black);
-                System.Windows.Documents.TextElement.SetForeground(DatabaseComboBox, new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Black));
-            };
 
             // Populate databases from all workspaces
             RefreshDatabaseList();
+
+            // Initialize and start call detection service
+            _callDetectionService = new CallDetectionService();
+            _callDetectionService.IsEnabled = IsCallDetectionEnabled;
+            _callDetectionService.MeetingDetected += OnMeetingDetected;
+            _callDetectionService.MeetingEnded += OnMeetingEnded;
+            _callDetectionService.DetectionError += OnDetectionError;
+            _callDetectionService.Start();
+            UpdateStatus();
         }
 
         public string StatusText
@@ -106,6 +120,8 @@ namespace MeetingNotesApp
             {
                 _isCallDetectionEnabled = value;
                 OnPropertyChanged();
+                if (_callDetectionService != null)
+                    _callDetectionService.IsEnabled = value;
                 UpdateStatus();
             }
         }
@@ -166,6 +182,79 @@ namespace MeetingNotesApp
             }
         }
 
+        public bool HasDatabases
+        {
+            get => _hasDatabases;
+            set
+            {
+                _hasDatabases = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsDatabasePickerEnabled));
+            }
+        }
+
+        public bool IsDatabasePickerEnabled => HasDatabases;
+
+        public string ConnectedWorkspaceSummary
+        {
+            get => _connectedWorkspaceSummary;
+            set
+            {
+                _connectedWorkspaceSummary = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public bool IsDetectionBannerVisible
+        {
+            get => _isDetectionBannerVisible;
+            set
+            {
+                _isDetectionBannerVisible = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public string DetectionBannerTitle
+        {
+            get => _detectionBannerTitle;
+            set
+            {
+                _detectionBannerTitle = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public string DetectionBannerMessage
+        {
+            get => _detectionBannerMessage;
+            set
+            {
+                _detectionBannerMessage = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public Brush DetectionBannerColor
+        {
+            get => _detectionBannerColor;
+            set
+            {
+                _detectionBannerColor = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public bool DetectionFoundApps
+        {
+            get => _detectionFoundApps;
+            set
+            {
+                _detectionFoundApps = value;
+                OnPropertyChanged();
+            }
+        }
+
         private void RefreshDatabaseList()
         {
             // Populate databases from all configured workspaces
@@ -187,7 +276,23 @@ namespace MeetingNotesApp
                     }
                 }
             }
-            
+
+            // Update connection state
+            HasDatabases = AvailableDatabases.Count > 0;
+
+            if (AvailableWorkspaces.Count == 1)
+            {
+                ConnectedWorkspaceSummary = AvailableWorkspaces[0].WorkspaceName;
+            }
+            else if (AvailableWorkspaces.Count > 1)
+            {
+                ConnectedWorkspaceSummary = $"{AvailableWorkspaces.Count} workspaces";
+            }
+            else
+            {
+                ConnectedWorkspaceSummary = "";
+            }
+
             // Select first database by default
             if (AvailableDatabases.Count > 0)
             {
@@ -200,11 +305,14 @@ namespace MeetingNotesApp
         {
             if (DatabaseComboBox.SelectedItem == null)
             {
+                ValidationErrorText.Text = "Please select where to save your meeting notes";
+                ValidationErrorText.Visibility = Visibility.Visible;
+                DropdownSpacer.Visibility = Visibility.Collapsed;
                 return;
             }
-            
+
             SelectedDatabase = DatabaseComboBox.SelectedItem as NotionDatabase;
-            
+
             // Find the workspace that owns this database
             NotionWorkspaceIntegration? owningWorkspace = null;
             foreach (var workspace in AvailableWorkspaces)
@@ -222,12 +330,15 @@ namespace MeetingNotesApp
                 }
                 if (owningWorkspace != null) break;
             }
-            
+
             if (owningWorkspace == null)
             {
+                ValidationErrorText.Text = "Could not find the workspace for this database. Try reconnecting in Settings.";
+                ValidationErrorText.Visibility = Visibility.Visible;
+                DropdownSpacer.Visibility = Visibility.Collapsed;
                 return;
             }
-            
+
             SelectedWorkspace = owningWorkspace;
 
             // Create meeting info with selected workspace
@@ -245,6 +356,34 @@ namespace MeetingNotesApp
             // Open note-taking window directly
             var noteWindow = new NoteTakingWindow(meetingInfo);
             noteWindow.Show();
+        }
+
+        private void OnConnectNotionClicked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var settingsWindow = new SettingsWindow(AvailableWorkspaces);
+                settingsWindow.Owner = this;
+                settingsWindow.ShowDialog();
+
+                // Refresh after settings changes
+                RefreshDatabaseList();
+                _ = LoadRecentNotesFromNotion(AvailableWorkspaces);
+            }
+            catch (Exception ex)
+            {
+                // Error opening settings
+            }
+        }
+
+        private void OnDatabaseSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Clear validation error when user makes a selection
+            if (DatabaseComboBox.SelectedItem != null)
+            {
+                ValidationErrorText.Visibility = Visibility.Collapsed;
+                DropdownSpacer.Visibility = Visibility.Visible;
+            }
         }
 
         private void UpdateStatus()
@@ -285,14 +424,104 @@ namespace MeetingNotesApp
 
         private void OnSimulateCallClicked(object sender, RoutedEventArgs e)
         {
-            StatusText = "Recording";
-            StatusDescription = "Taking notes for current call";
+            _userStartedNotes = false;
+            _callDetectionService.ScanNow();
+
+            if (!_callDetectionService.IsMeetingActive && !IsDetectionBannerVisible)
+            {
+                DetectionBannerTitle = "No Active Calls Detected";
+                DetectionBannerMessage = "No monitored call apps are currently in a meeting. Start a Zoom call and try again.";
+                DetectionBannerColor = (Brush)FindResource("WarningBrush");
+                DetectionFoundApps = false;
+                IsDetectionBannerVisible = true;
+
+                StatusText = "No Calls";
+                StatusDescription = "No active call apps found";
+                StatusColor = (Brush)FindResource("WarningBrush");
+            }
+        }
+
+        private void OnDismissDetectionBanner(object sender, RoutedEventArgs e)
+        {
+            IsDetectionBannerVisible = false;
+            _userStartedNotes = false;
+
+            if (_callDetectionService.IsMeetingActive)
+            {
+                StatusText = "Call Detected";
+                StatusDescription = $"{_callDetectionService.ActivePlatformName} meeting in progress";
+                StatusColor = (Brush)FindResource("InfoBrush");
+            }
+            else
+            {
+                UpdateStatus();
+            }
+        }
+
+        private void OnStartNotesFromDetection(object sender, RoutedEventArgs e)
+        {
+            _userStartedNotes = true;
+            IsDetectionBannerVisible = false;
+            OnStartNotesClicked(sender, e);
+        }
+
+        private void OnMeetingDetected(object? sender, MeetingDetectedEventArgs e)
+        {
+            if (_userStartedNotes) return;
+
+            DetectionBannerTitle = $"{e.PlatformName} Meeting Detected";
+            DetectionBannerMessage = $"A {e.PlatformName} meeting is in progress.\nDetected via: {e.DetectionMethod}";
+            DetectionBannerColor = (Brush)FindResource("InfoBrush");
+            DetectionFoundApps = true;
+            IsDetectionBannerVisible = true;
+
+            StatusText = "Call Detected";
+            StatusDescription = $"{e.PlatformName} meeting in progress";
             StatusColor = (Brush)FindResource("InfoBrush");
+        }
+
+        private void OnMeetingEnded(object? sender, MeetingEndedEventArgs e)
+        {
+            if (_userStartedNotes) return;
+
+            if (IsDetectionBannerVisible)
+            {
+                DetectionBannerTitle = $"{e.PlatformName} Meeting Ended";
+                DetectionBannerMessage = "The meeting appears to have ended.";
+                DetectionBannerColor = (Brush)FindResource("WarningBrush");
+                DetectionFoundApps = false;
+            }
+
+            StatusText = "Monitoring";
+            StatusDescription = "Listening for calls from Teams, Zoom, and Meet";
+            StatusColor = (Brush)FindResource("SuccessBrush");
+        }
+
+        private void OnDetectionError(object? sender, DetectionErrorEventArgs e)
+        {
+            DetectionBannerTitle = "Detection Error";
+            DetectionBannerMessage = e.ErrorMessage;
+            DetectionBannerColor = (Brush)FindResource("ErrorBrush");
+            DetectionFoundApps = false;
+            IsDetectionBannerVisible = true;
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            _callDetectionService?.Dispose();
+            base.OnClosed(e);
         }
 
         private void OnTestNotionClicked(object sender, RoutedEventArgs e)
         {
             // Connection test completed
+        }
+
+        private void OnTestLLamaSharpClicked(object sender, RoutedEventArgs e)
+        {
+            var debugWindow = new LLamaSharpDebugWindow();
+            debugWindow.Owner = this;
+            debugWindow.Show();
         }
 
         private void OnRecentNoteClicked(object sender, SelectionChangedEventArgs e)

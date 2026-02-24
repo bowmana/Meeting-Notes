@@ -10,12 +10,40 @@
 - Note-taking window with all sections (transcription, notes, summary, key points, action items)
 - System audio capture via WASAPI loopback (NAudio)
 - Speech-to-text via Windows Speech Recognition (System.Speech)
-- AI summaries via local LMStudio
+- AI summaries via LMStudio (replaced by LLamaSharp/Cloud API in v0.1.5)
 - Notion API: save notes with structured properties, fetch recent notes
-- Settings: Notion workspace CRUD (add/edit/delete), LMStudio connection test
+- Settings: Notion workspace CRUD (add/edit/delete)
 - Call detection UI toggles (Teams, Zoom, Meet, Discord) — UI only, not functional
 - Dark theme with muted grey-green accents
 - Workspace persistence to JSON file
+
+---
+
+### v0.1.5 — AI Provider Architecture
+
+**Goal:** Replace LMStudio dependency with in-process LLamaSharp for zero-config local AI, and add optional cloud API support for users who want faster/higher-quality summaries.
+
+#### Private Mode (LLamaSharp — Local, Default)
+- LLamaSharp integration with `StatelessExecutor` for in-process LLM inference
+- Model download manager (first-run download of Phi-4-mini Q4_K_M from Hugging Face with progress bar)
+- Model stored at `%AppData%/MeetingNotesApp/models/`
+- GPU auto-detection (CUDA 12 for NVIDIA GPUs, automatic CPU fallback)
+- Streaming token output to UI during summary generation
+- Long transcript handling via chunked summarization (context window management)
+- Singleton model lifecycle (lazy load on first use, dispose on app exit)
+
+#### API Key Mode (Cloud — Opt-In)
+- Cloud API inference service using OpenAI-compatible `/v1/chat/completions` endpoint
+- Provider dropdown in Settings: OpenAI, Anthropic, or custom endpoint URL
+- User provides their own API key (BYOK — Bring Your Own Key)
+- Privacy disclosure shown when user selects cloud mode
+
+#### Settings & Infrastructure
+- AI Provider settings UI: mode toggle (Private / API Key), model status, API key input
+- "Test AI Connection" button (replaces LMStudio-specific test)
+- Persist AI settings to `appsettings.json` (mode, provider, API key, model path)
+- `IAiSummaryService` interface with swappable implementations (LLamaSharp + Cloud)
+- Remove LMStudio as a hard dependency
 
 ---
 
@@ -82,7 +110,7 @@
 
 ### Future Ideas (post-v1)
 
-- Multiple LLM provider support (Ollama, cloud APIs as opt-in)
+- Ollama support as additional local inference backend
 - Calendar integration (auto-populate meeting info from Outlook/Google Calendar)
 - Multi-language transcription
 - Meeting analytics (frequency, duration trends)
