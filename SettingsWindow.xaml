@@ -380,6 +380,345 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Speaker Diarization Settings -->
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        CornerRadius="10"
+                        Padding="15"
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="Speaker Diarization"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Margin="0,0,0,5"/>
+
+                        <TextBlock Text="Speaker diarization identifies who said what during meetings. After recording stops, the audio is analyzed to label each speaker's contributions. All processing happens locally on your device."
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,15"/>
+
+                        <!-- Active Segmentation Model Selector -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                            <TextBlock Text="Active Model:"
+                                       FontSize="14"
+                                       FontWeight="Bold"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,10,0"/>
+                            <ComboBox x:Name="ActiveDiarizationModelComboBox"
+                                      Width="280"
+                                      Height="32"
+                                      FontSize="13"
+                                      SelectionChanged="OnActiveDiarizationModelChanged"
+                                      ToolTip="Select which downloaded segmentation model to use for speaker diarization"/>
+                        </StackPanel>
+
+                        <!-- Segmentation Models List -->
+                        <TextBlock Text="Segmentation Models"
+                                   FontSize="14"
+                                   FontWeight="Bold"
+                                   Margin="0,0,0,8"/>
+
+                        <ItemsControl x:Name="DiarizationModelListControl">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource LightBrush}"
+                                            CornerRadius="6"
+                                            Padding="12"
+                                            Margin="0,0,0,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <StackPanel Grid.Column="0">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               FontSize="14"
+                                                               FontWeight="SemiBold"
+                                                               Margin="0,0,10,0"/>
+                                                    <TextBlock Text="{Binding SizeText}"
+                                                               FontSize="12"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Margin="0,0,10,0"/>
+                                                    <Ellipse Width="8" Height="8"
+                                                             Fill="{Binding StatusColor}"
+                                                             VerticalAlignment="Center"
+                                                             Margin="0,0,6,0"/>
+                                                    <TextBlock Text="{Binding StatusText}"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Description}"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           Margin="0,3,0,0"/>
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <Button Content="Download"
+                                                        Click="OnDownloadDiarizationSegModelClicked"
+                                                        Tag="{Binding ModelType}"
+                                                        Padding="12,6"
+                                                        FontSize="12"
+                                                        MinWidth="80"
+                                                        Background="{DynamicResource SuccessBrush}"
+                                                        Visibility="{Binding DownloadButtonVisibility}"/>
+                                                <Button Content="Delete"
+                                                        Click="OnDeleteDiarizationSegModelClicked"
+                                                        Tag="{Binding ModelType}"
+                                                        Padding="12,6"
+                                                        FontSize="12"
+                                                        MinWidth="80"
+                                                        Background="{DynamicResource ErrorBrush}"
+                                                        Visibility="{Binding DeleteButtonVisibility}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Segmentation Download Progress -->
+                        <StackPanel x:Name="DiarizationSegDownloadProgress" Visibility="Collapsed" Margin="0,8,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                <TextBlock x:Name="DiarizationSegDownloadStatusText"
+                                           Text="Downloading..."
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <Button x:Name="CancelDiarizationSegDownloadButton"
+                                        Content="Cancel"
+                                        Click="OnCancelDiarizationSegDownloadClicked"
+                                        Padding="8,2"
+                                        Margin="15,0,0,0"
+                                        FontSize="11"
+                                        Background="{DynamicResource Gray600Brush}"/>
+                            </StackPanel>
+                            <ProgressBar x:Name="DiarizationSegDownloadProgressBar"
+                                         Value="0" Minimum="0" Maximum="100" Height="6"
+                                         Foreground="{DynamicResource PrimaryBrush}"
+                                         Background="{DynamicResource Gray300Brush}"/>
+                        </StackPanel>
+
+                        <!-- Speaker Embedding Model -->
+                        <TextBlock Text="Speaker Embedding Model"
+                                   FontSize="14"
+                                   FontWeight="Bold"
+                                   Margin="0,15,0,5"/>
+
+                        <TextBlock Text="Required for all diarization. Identifies unique speakers by voice characteristics."
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,8"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                            <TextBlock Text="3D-Speaker CampPlus English (~28 MB)"
+                                       FontSize="13"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,10,0"/>
+                            <Ellipse x:Name="EmbeddingModelStatusDot" Width="8" Height="8" Fill="Gray" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="EmbeddingModelStatusText"
+                                       Text="Checking..."
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                            <Button x:Name="DownloadEmbeddingModelButton"
+                                    Content="Download"
+                                    Click="OnDownloadEmbeddingModelClicked"
+                                    Padding="12,6"
+                                    FontSize="12"
+                                    Margin="0,0,10,0"
+                                    Background="{DynamicResource SuccessBrush}"/>
+                            <Button x:Name="DeleteEmbeddingModelButton"
+                                    Content="Delete"
+                                    Click="OnDeleteEmbeddingModelClicked"
+                                    Padding="12,6"
+                                    FontSize="12"
+                                    Background="{DynamicResource ErrorBrush}"
+                                    Visibility="Collapsed"/>
+                        </StackPanel>
+
+                        <!-- Embedding Download Progress -->
+                        <StackPanel x:Name="EmbeddingDownloadProgress" Visibility="Collapsed" Margin="0,0,0,10">
+                            <TextBlock x:Name="EmbeddingDownloadStatusText"
+                                       Text="Downloading..."
+                                       FontSize="12"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Margin="0,0,0,5"/>
+                            <ProgressBar x:Name="EmbeddingDownloadProgressBar"
+                                         Value="0" Minimum="0" Maximum="100" Height="6"
+                                         Foreground="{DynamicResource PrimaryBrush}"
+                                         Background="{DynamicResource Gray300Brush}"/>
+                        </StackPanel>
+
+                        <!-- Advanced Settings -->
+                        <TextBlock Text="Advanced Settings"
+                                   FontSize="14"
+                                   FontWeight="Bold"
+                                   Margin="0,10,0,5"/>
+
+                        <Grid Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="180"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Number of Speakers:" VerticalAlignment="Center" FontSize="12"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <TextBox x:Name="DiarizationNumSpeakersBox"
+                                         Text="-1" Width="60" Padding="4,2"
+                                         ToolTip="-1 = auto-detect. Set to a positive number to force a specific speaker count."/>
+                                <TextBlock Text="(-1 = auto-detect)" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="180"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Clustering Threshold:" VerticalAlignment="Center" FontSize="12"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <TextBox x:Name="DiarizationThresholdBox"
+                                         Text="0.5" Width="60" Padding="4,2"
+                                         ToolTip="Lower = more speakers detected. Higher = fewer speakers. Range: 0.0 - 1.0"/>
+                                <TextBlock Text="(0.0 - 1.0, lower = more speakers)" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Speech Recognition (ASR) Settings -->
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        CornerRadius="10"
+                        Padding="15"
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="Speech Recognition"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Margin="0,0,0,5"/>
+
+                        <TextBlock Text="Speech recognition converts meeting audio into text. Multiple models are available — larger models are more accurate but slower. All processing happens locally on your device."
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,15"/>
+
+                        <!-- Active Model Selector -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                            <TextBlock Text="Active Model:"
+                                       FontSize="14"
+                                       FontWeight="Bold"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,10,0"/>
+                            <ComboBox x:Name="ActiveASRModelComboBox"
+                                      Width="280"
+                                      Height="32"
+                                      FontSize="13"
+                                      SelectionChanged="OnActiveASRModelChanged"
+                                      ToolTip="Select which downloaded model to use for transcription"/>
+                        </StackPanel>
+
+                        <!-- Available Models List -->
+                        <TextBlock Text="Available Models"
+                                   FontSize="14"
+                                   FontWeight="Bold"
+                                   Margin="0,0,0,8"/>
+
+                        <ItemsControl x:Name="ASRModelListControl">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource LightBrush}"
+                                            CornerRadius="6"
+                                            Padding="12"
+                                            Margin="0,0,0,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <StackPanel Grid.Column="0">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               FontSize="14"
+                                                               FontWeight="SemiBold"
+                                                               Margin="0,0,10,0"/>
+                                                    <TextBlock Text="{Binding SizeText}"
+                                                               FontSize="12"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               VerticalAlignment="Center"
+                                                               Margin="0,0,10,0"/>
+                                                    <Ellipse Width="8" Height="8"
+                                                             Fill="{Binding StatusColor}"
+                                                             VerticalAlignment="Center"
+                                                             Margin="0,0,6,0"/>
+                                                    <TextBlock Text="{Binding StatusText}"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Description}"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           Margin="0,3,0,0"/>
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <Button Content="Download"
+                                                        Click="OnDownloadASRModelClicked"
+                                                        Tag="{Binding ModelType}"
+                                                        Padding="12,6"
+                                                        FontSize="12"
+                                                        MinWidth="80"
+                                                        Background="{DynamicResource SuccessBrush}"
+                                                        Visibility="{Binding DownloadButtonVisibility}"/>
+                                                <Button Content="Delete"
+                                                        Click="OnDeleteASRModelClicked"
+                                                        Tag="{Binding ModelType}"
+                                                        Padding="12,6"
+                                                        FontSize="12"
+                                                        MinWidth="80"
+                                                        Background="{DynamicResource ErrorBrush}"
+                                                        Visibility="{Binding DeleteButtonVisibility}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Download Progress -->
+                        <StackPanel x:Name="ASRDownloadProgress" Visibility="Collapsed" Margin="0,8,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                <TextBlock x:Name="ASRDownloadStatusText"
+                                           Text="Downloading..."
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <Button x:Name="CancelASRDownloadButton"
+                                        Content="Cancel"
+                                        Click="OnCancelASRDownloadClicked"
+                                        Padding="8,2"
+                                        Margin="15,0,0,0"
+                                        FontSize="11"
+                                        Background="{DynamicResource Gray600Brush}"/>
+                            </StackPanel>
+                            <ProgressBar x:Name="ASRDownloadProgressBar"
+                                         Value="0" Minimum="0" Maximum="100" Height="6"
+                                         Foreground="{DynamicResource PrimaryBrush}"
+                                         Background="{DynamicResource Gray300Brush}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
                 <!-- Call Detection Settings -->
                 <Border Background="{DynamicResource SurfaceBrush}" 
                         CornerRadius="10" 

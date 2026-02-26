@@ -114,9 +114,23 @@
                                     MinWidth="100"/>
                         </StackPanel>
                         
+                        <!-- Diarization progress (visible during post-recording processing) -->
+                        <StackPanel Visibility="{Binding IsDiarizing, Converter={StaticResource BoolToVisConverter}}"
+                                    Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                <TextBlock Text="{Binding DiarizationStatus}"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                            <ProgressBar Value="{Binding DiarizationProgress}"
+                                         Minimum="0" Maximum="100" Height="4"
+                                         Foreground="{DynamicResource PrimaryBrush}"
+                                         Background="{DynamicResource Gray300Brush}"/>
+                        </StackPanel>
+
                         <ScrollViewer Height="150">
-                            <TextBlock Text="{Binding LiveTranscription}" 
-                                       FontSize="14" 
+                            <TextBlock Text="{Binding LiveTranscription}"
+                                       FontSize="14"
                                        TextWrapping="Wrap"/>
                         </ScrollViewer>
                     </StackPanel>

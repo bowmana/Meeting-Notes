@@ -19,11 +19,40 @@
 - Audio format: system default (typically 32-bit float, 48kHz, stereo)
 - Converted to 16kHz mono WAV for speech recognition compatibility
 
-### Speech Recognition
-- **System.Speech 8.0** — Windows built-in speech recognition engine
-- `SpeechRecognitionEngine` with `DictationGrammar` for free-form speech
-- Processes captured audio files (not real-time streaming)
-- Flow: Record → Stop → Convert to 16kHz mono WAV → Feed to SpeechRecognitionEngine → Append result
+### Speech Recognition (Multi-Model)
+- **sherpa-onnx OfflineRecognizer** — offline neural ASR engine supporting multiple model families
+- Uses the **same `org.k2fsa.sherpa.onnx` NuGet package** already installed for speaker diarization — no additional dependencies
+- **User-selectable models** (downloaded independently via Settings → Speech Recognition):
+
+| Model | Size | WER | Speed | Config |
+|-------|------|-----|-------|--------|
+| Moonshine Tiny int8 | ~125 MB (5 files) | ~12% | Very fast | `ModelConfig.Moonshine` |
+| Moonshine Base int8 | ~288 MB (5 files) | ~9% | Fast | `ModelConfig.Moonshine` |
+| Whisper tiny.en int8 | ~104 MB (3 files) | ~12% | Fast | `ModelConfig.Whisper` |
+| Whisper base.en int8 | ~161 MB (3 files) | ~10% | Moderate | `ModelConfig.Whisper` |
+| Whisper small.en int8 | ~375 MB (3 files) | ~5% | Slower | `ModelConfig.Whisper` |
+
+- Models stored at `%LocalAppData%/MeetingNotesApp/models/sherpa-onnx/{model-folder}/`
+- Selected model persisted in `appsettings.json` (ASR.SelectedModel)
+- Processes audio as 16kHz mono float[] — handles variable-length segments well
+- Flow: Record → Stop → Convert to 16kHz mono WAV → sherpa-onnx diarization → float[] sub-array per segment → sherpa-onnx ASR per segment
+- No audio file slicing: full WAV loaded as float[] once, segments accessed by timestamp index into the array
+- **Privacy: all processing is local. No network calls. Models run via ONNX Runtime on CPU.**
+
+### Speaker Diarization
+- **sherpa-onnx** (`org.k2fsa.sherpa.onnx` v1.12.26) — offline speaker diarization using ONNX Runtime
+- Identifies "who spoke when" from a single mixed audio channel (WASAPI loopback output)
+- Requires `AllowUnsafeBlocks=true` in csproj (native P/Invoke interop with sherpa-onnx C API)
+- Two ONNX models (~36 MB total, downloaded to `%LocalAppData%/MeetingNotesApp/models/sherpa-onnx/`):
+  - **Segmentation model**: pyannote-segmentation-3.0 (~6 MB) — detects speech segments and speaker turns in audio
+  - **Speaker embedding model**: 3D-Speaker CampPlus (~30 MB) — generates voice fingerprints per segment for clustering
+- Audio format: 16kHz mono float[] normalized [-1, 1] (matches existing audio conversion pipeline)
+- Processing: **offline only** — requires complete audio buffer, runs after user clicks Stop Recording
+- Pipeline: VAD → Speaker Segmentation → Embedding Extraction → Spectral Clustering → speaker-labeled time segments
+- Auto-detects number of speakers (configurable override via NumClusters setting)
+- Progress callback available during processing (reports chunk-by-chunk progress to UI)
+- Output: `OfflineSpeakerDiarizationSegment[]` — each segment has Start (seconds), End (seconds), Speaker (0-indexed int)
+- **Privacy: all processing is local. No network calls. Models run via ONNX Runtime on CPU or CUDA GPU.**
 
 ### AI Summarization (Dual Mode)
 
@@ -76,8 +105,8 @@ The app supports two AI summarization modes. The user selects their preferred mo
 | Package | Version | Purpose |
 |---------|---------|---------|
 | NAudio | 2.2.1 | System audio capture (WASAPI loopback) |
-| System.Speech | 8.0.0 | Windows speech recognition |
 | LLamaSharp | 0.26.0 | In-process LLM inference (.NET binding for llama.cpp) |
 | LLamaSharp.Backend.Cpu | 0.26.0 | CPU inference backend (works on all machines) |
 | LLamaSharp.Backend.Cuda12 | 0.26.0 | NVIDIA GPU inference backend (optional, for CUDA 12.x) |
+| org.k2fsa.sherpa.onnx | 1.12.26 | Offline speaker diarization + multi-model ASR: Moonshine + Whisper (ONNX Runtime) |
 | Microsoft.Extensions.Logging.Debug | 8.0.0 | Debug logging |

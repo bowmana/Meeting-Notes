@@ -3,10 +3,9 @@ using System.ComponentModel;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Speech.Recognition;
-using System.Speech.AudioFormat;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -35,7 +34,7 @@ namespace MeetingNotesApp
         private MeetingInfo _meetingInfo;
         
         // Transcription-related fields
-        private SpeechRecognitionEngine _speechEngine;
+        private ISpeechRecognitionService _asrService;
         private WasapiLoopbackCapture _loopbackCapture;
         private WaveFileWriter _waveFileWriter;
         private MemoryStream _audioStream;
@@ -44,6 +43,15 @@ namespace MeetingNotesApp
         private Brush _recordingButtonColor = Brushes.Green;
         private string _transcriptionStatus = "Ready to record";
         private Brush _transcriptionStatusColor = Brushes.Gray;
+
+        // Speaker diarization fields
+        private ISpeakerDiarizationService _diarizationService;
+        private DiarizedTranscription _diarizedTranscription;
+        private CancellationTokenSource _diarizationCts;
+        private string _diarizationStatus = "";
+        private double _diarizationProgress = 0;
+        private bool _isDiarizing = false;
+        private int _detectedSpeakerCount = 0;
 
         public NoteTakingWindow(MeetingInfo meetingInfo = null)
         {
@@ -71,8 +79,25 @@ namespace MeetingNotesApp
             KeyPointsListBox.ItemsSource = KeyPoints;
             ActionItemsListBox.ItemsSource = ActionItems;
 
-            // Initialize speech recognition
-            InitializeSpeechRecognition();
+            // Initialize audio capture and services
+            try
+            {
+                _loopbackCapture = new WasapiLoopbackCapture();
+                _loopbackCapture.DataAvailable += OnSystemAudioDataAvailable;
+                _loopbackCapture.RecordingStopped += OnSystemAudioRecordingStopped;
+                _audioStream = new MemoryStream();
+                TranscriptionStatus = "Ready to capture system audio";
+                TranscriptionStatusColor = Brushes.Gray;
+            }
+            catch (Exception ex)
+            {
+                TranscriptionStatus = $"Audio capture error: {ex.Message}";
+                TranscriptionStatusColor = Brushes.Red;
+            }
+
+            AppSettings.LoadSettings();
+            _asrService = new SherpaOnnxASRService(AppSettings.ASR.SelectedModel);
+            _diarizationService = new SherpaOnnxDiarizationService();
 
             // Initialize meeting info if provided
             if (_meetingInfo != null)
@@ -269,6 +294,46 @@ namespace MeetingNotesApp
             }
         }
 
+        public string DiarizationStatus
+        {
+            get => _diarizationStatus;
+            set
+            {
+                _diarizationStatus = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public double DiarizationProgress
+        {
+            get => _diarizationProgress;
+            set
+            {
+                _diarizationProgress = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public bool IsDiarizing
+        {
+            get => _isDiarizing;
+            set
+            {
+                _isDiarizing = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public int DetectedSpeakerCount
+        {
+            get => _detectedSpeakerCount;
+            set
+            {
+                _detectedSpeakerCount = value;
+                OnPropertyChanged();
+            }
+        }
+
         private void UpdateDuration()
         {
             // Simulate duration update - use current time as start time for demo
@@ -420,6 +485,35 @@ namespace MeetingNotesApp
                 }
             };
 
+            // Add Speakers property if diarization was used
+            if (_diarizedTranscription != null && _diarizedTranscription.SpeakerCount > 0)
+            {
+                properties["Speakers"] = new
+                {
+                    rich_text = new[]
+                    {
+                        new { text = new { content = $"{_diarizedTranscription.SpeakerCount} speakers detected" } }
+                    }
+                };
+            }
+
+            // Truncate transcription to Notion's 2000-char rich_text limit
+            if (properties.ContainsKey("Transcription"))
+            {
+                var transcriptionText = LiveTranscription ?? "";
+                if (transcriptionText.Length > 2000)
+                {
+                    transcriptionText = transcriptionText.Substring(0, 1990) + "\n... (truncated)";
+                }
+                properties["Transcription"] = new
+                {
+                    rich_text = new[]
+                    {
+                        new { text = new { content = transcriptionText } }
+                    }
+                };
+            }
+
             // Add Start Time if available
             if (startTime.HasValue)
             {
@@ -550,18 +644,24 @@ namespace MeetingNotesApp
                     new
                     {
                         role = "system",
-                        content = @"You are a meeting assistant. Create a structured meeting summary in the following exact format:
+                        content = @"You are a meeting assistant. The transcription may include speaker labels (Speaker 1, Speaker 2, etc.) with timestamps. Use these to attribute statements and action items to specific speakers.
+
+Create a structured meeting summary in the following exact format:
 
 ### Meeting Overview
-[Brief 2-3 sentence overview of the main topic and purpose of the meeting]
+[Brief 2-3 sentence overview including key participants if speaker labels are present]
+
+### Discussion by Topic
+[Group related discussion points. If speaker labels are present, note which speaker said what.]
 
 ### Action Items
-[Extract specific action items from the meeting in this format:]
-- [ ] [Person] to [specific action] by [timeframe if mentioned]
+[Extract specific action items in this format:]
+- [ ] [Speaker/Person] to [specific action] by [timeframe if mentioned]
 
-IMPORTANT: Always create a summary based on the provided content, no matter how brief or minimal it seems. Even if the content appears unimportant or short, still provide a professional summary.
+### Decisions Made
+[List any decisions, noting who proposed/agreed if speaker labels are present. If none, write 'No specific decisions identified.']
 
-Focus on extracting concrete action items with assignees when mentioned. If no specific assignee is mentioned, use 'Team' or 'TBD'. If no action items are found, write 'No specific action items identified.' Keep the summary professional and structured with proper markdown formatting."
+IMPORTANT: Always create a summary based on the provided content, no matter how brief or minimal it seems. If speaker labels are present, use them to attribute statements and decisions. If no specific assignee is mentioned, use 'Team' or 'TBD'. Keep the summary professional and structured with proper markdown formatting."
                     },
                     new
                     {
@@ -616,12 +716,15 @@ Focus on extracting concrete action items with assignees when mentioned. If no s
         protected override void OnClosed(EventArgs e)
         {
             _timer?.Stop();
+            // Cancel any in-progress diarization
+            _diarizationCts?.Cancel();
             // Clean up transcription resources
             StopRecording();
-            _speechEngine?.Dispose();
+            _asrService?.Dispose();
             _loopbackCapture?.Dispose();
             _waveFileWriter?.Dispose();
             _audioStream?.Dispose();
+            _diarizationService?.Dispose();
             base.OnClosed(e);
         }
 
@@ -631,76 +734,6 @@ Focus on extracting concrete action items with assignees when mentioned. If no s
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
-
-        private void InitializeSpeechRecognition()
-        {
-            try
-            {
-                // Create speech recognition engine with better settings
-                _speechEngine = new SpeechRecognitionEngine();
-                
-                // Create a grammar for dictation (free-form speech)
-                var dictationGrammar = new DictationGrammar();
-                _speechEngine.LoadGrammar(dictationGrammar);
-                
-                // Set up event handlers
-                _speechEngine.SpeechRecognized += OnSpeechRecognized;
-                _speechEngine.SpeechRecognitionRejected += OnSpeechRecognitionRejected;
-                
-                // Configure recognition settings for better accuracy
-                _speechEngine.BabbleTimeout = TimeSpan.FromSeconds(2);
-                _speechEngine.InitialSilenceTimeout = TimeSpan.FromSeconds(5);
-                _speechEngine.EndSilenceTimeout = TimeSpan.FromSeconds(1);
-                _speechEngine.EndSilenceTimeoutAmbiguous = TimeSpan.FromSeconds(2);
-                
-                // Initialize system audio capture (speakers/headphones output)
-                _loopbackCapture = new WasapiLoopbackCapture();
-                _loopbackCapture.DataAvailable += OnSystemAudioDataAvailable;
-                _loopbackCapture.RecordingStopped += OnSystemAudioRecordingStopped;
-                
-                // Create memory stream for audio data
-                _audioStream = new MemoryStream();
-                
-                TranscriptionStatus = "Ready to capture system audio";
-                TranscriptionStatusColor = Brushes.Gray;
-            }
-            catch (Exception ex)
-            {
-                TranscriptionStatus = $"Error: {ex.Message}";
-                TranscriptionStatusColor = Brushes.Red;
-            }
-        }
-
-        private void OnSpeechRecognized(object sender, SpeechRecognizedEventArgs e)
-        {
-            // Update UI on the main thread
-            Dispatcher.Invoke(() =>
-            {
-                // Append to existing transcription instead of replacing
-                if (!string.IsNullOrEmpty(LiveTranscription))
-                {
-                    LiveTranscription += " " + e.Result.Text;
-                }
-                else
-                {
-                    LiveTranscription = e.Result.Text;
-                }
-                
-                TranscriptionStatus = "Transcription completed";
-                TranscriptionStatusColor = Brushes.Green;
-            });
-        }
-
-        private void OnSpeechRecognitionRejected(object sender, SpeechRecognitionRejectedEventArgs e)
-        {
-            // Update UI on the main thread
-            Dispatcher.Invoke(() =>
-            {
-                TranscriptionStatus = "Listening...";
-                TranscriptionStatusColor = Brushes.Orange;
-            });
-        }
-
 
         private void OnSystemAudioDataAvailable(object sender, WaveInEventArgs e)
         {
@@ -728,13 +761,13 @@ Focus on extracting concrete action items with assignees when mentioned. If no s
             }
         }
 
-        private void ProcessCapturedAudio()
+        private async void ProcessCapturedAudio()
         {
             try
             {
                 // Reset stream position
                 _audioStream.Position = 0;
-                
+
                 // Check if we actually captured any audio
                 if (_audioStream.Length == 0)
                 {
@@ -745,52 +778,57 @@ Focus on extracting concrete action items with assignees when mentioned. If no s
                     });
                     return;
                 }
-                
+
                 // Create a temporary WAV file from the captured audio
                 var tempFile = Path.GetTempFileName() + ".wav";
-                
+
                 // Write WAV header and audio data
                 using (var writer = new WaveFileWriter(tempFile, _loopbackCapture.WaveFormat))
                 {
                     _audioStream.Position = 0;
                     _audioStream.CopyTo(writer);
                 }
-                
-                // Log audio file size for debugging
+
                 var fileSize = new FileInfo(tempFile).Length;
                 Dispatcher.Invoke(() =>
                 {
-                    TranscriptionStatus = $"Processing audio ({fileSize} bytes)...";
+                    TranscriptionStatus = $"Processing audio ({fileSize / 1024} KB)...";
                     TranscriptionStatusColor = Brushes.Blue;
                 });
-                
-                // Convert audio format for speech recognition
+
+                // Convert audio format to 16kHz mono WAV (used for both diarization and speech recognition)
                 var convertedFile = ConvertAudioForSpeechRecognition(tempFile);
-                
-                // Set speech recognition input to the converted audio file
-                _speechEngine.SetInputToWaveFile(convertedFile);
-                
-                // Start recognition (single mode for one-time processing)
-                _speechEngine.RecognizeAsync(RecognizeMode.Single);
-                
-                // Set up a timeout to handle cases where recognition doesn't complete
-                Task.Delay(15000).ContinueWith(_ => 
+
+                // Check model availability and choose pipeline
+                if (!_asrService.AreModelsAvailable)
                 {
+                    // No ASR models — cannot transcribe at all
                     Dispatcher.Invoke(() =>
                     {
-                        if (TranscriptionStatus == "Processing audio..." || TranscriptionStatus.Contains("Processing audio"))
-                        {
-                            TranscriptionStatus = "Transcription completed";
-                            TranscriptionStatusColor = Brushes.Green;
-                        }
+                        TranscriptionStatus = "ASR models not downloaded. Go to Settings → Speech Recognition to download.";
+                        TranscriptionStatusColor = Brushes.Orange;
                     });
-                });
-                
-                // Clean up temp files after a delay
-                Task.Delay(5000).ContinueWith(_ => 
+                    return;
+                }
+                else if (_diarizationService.AreModelsAvailable)
+                {
+                    // Full pipeline: diarization + per-segment ASR
+                    await RunDiarizationPipelineAsync(convertedFile);
+                }
+                else
+                {
+                    // ASR available but no diarization — single-pass transcription without speaker labels
+                    Dispatcher.Invoke(() =>
+                    {
+                        DiarizationStatus = "Speaker diarization unavailable — download models in Settings";
+                    });
+                    await RunSinglePassTranscriptionAsync(convertedFile);
+                }
+
+                // Clean up the raw temp file (converted file cleaned up after transcription completes)
+                _ = Task.Delay(5000).ContinueWith(_ =>
                 {
                     try { File.Delete(tempFile); } catch { }
-                    try { File.Delete(convertedFile); } catch { }
                 });
             }
             catch (Exception ex)
@@ -799,10 +837,204 @@ Focus on extracting concrete action items with assignees when mentioned. If no s
                 {
                     TranscriptionStatus = $"Audio processing error: {ex.Message}";
                     TranscriptionStatusColor = Brushes.Red;
+                    IsDiarizing = false;
                 });
             }
         }
-        
+
+        /// <summary>
+        /// Single-pass transcription without speaker labels. Used when diarization models are not downloaded
+        /// but ASR models are available.
+        /// </summary>
+        private async Task RunSinglePassTranscriptionAsync(string convertedWavPath)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                TranscriptionStatus = "Transcribing audio...";
+                TranscriptionStatusColor = Brushes.Blue;
+            });
+
+            try
+            {
+                var samples = AudioHelper.LoadWavAsFloats(convertedWavPath);
+                var text = await _asrService.TranscribeAsync(samples);
+
+                Dispatcher.Invoke(() =>
+                {
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        LiveTranscription = text;
+                        TranscriptionStatus = "Transcription completed";
+                        TranscriptionStatusColor = Brushes.Green;
+                    }
+                    else
+                    {
+                        TranscriptionStatus = "No speech detected in audio";
+                        TranscriptionStatusColor = Brushes.Orange;
+                    }
+                });
+            }
+            finally
+            {
+                _ = Task.Delay(5000).ContinueWith(_ =>
+                {
+                    try { File.Delete(convertedWavPath); } catch { }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Full diarization pipeline: identify speakers → slice audio → transcribe per segment.
+        /// </summary>
+        private async Task RunDiarizationPipelineAsync(string convertedWavPath)
+        {
+            _diarizationCts = new CancellationTokenSource();
+            var token = _diarizationCts.Token;
+
+            try
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    IsDiarizing = true;
+                    DiarizationStatus = "Running speaker diarization...";
+                    DiarizationProgress = 0;
+                });
+
+                // Step 1: Run diarization to get speaker segments
+                var settings = AppSettings.Diarization;
+                var progress = new Progress<(int processed, int total)>(p =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        DiarizationProgress = p.total > 0 ? (double)p.processed / p.total * 100 : 0;
+                        DiarizationStatus = $"Analyzing speakers... {DiarizationProgress:F0}%";
+                    });
+                });
+
+                var segments = await _diarizationService.DiarizeAsync(
+                    convertedWavPath,
+                    settings.NumSpeakers,
+                    settings.Threshold,
+                    progress,
+                    token);
+
+                if (segments.Count == 0)
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        TranscriptionStatus = "No speech detected in audio";
+                        TranscriptionStatusColor = Brushes.Orange;
+                        IsDiarizing = false;
+                        DiarizationStatus = "No speakers detected";
+                    });
+                    return;
+                }
+
+                var speakerCount = segments.Max(s => s.Speaker) + 1;
+                Dispatcher.Invoke(() =>
+                {
+                    DetectedSpeakerCount = speakerCount;
+                    DiarizationStatus = $"Found {speakerCount} speaker{(speakerCount != 1 ? "s" : "")}. Transcribing segments...";
+                    DiarizationProgress = 100;
+                });
+
+                // Step 2: Load full audio once as float[], then transcribe each segment via sub-array
+                var fullSamples = AudioHelper.LoadWavAsFloats(convertedWavPath);
+                var transcriptionSegments = new List<TranscriptionSegment>();
+
+                for (int i = 0; i < segments.Count; i++)
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    var seg = segments[i];
+                    var segDuration = seg.End - seg.Start;
+
+                    // Skip very short segments (< 0.3 seconds) — unlikely to contain recognizable speech
+                    if (segDuration < 0.3f)
+                        continue;
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        DiarizationStatus = $"Transcribing segment {i + 1}/{segments.Count} (Speaker {seg.Speaker + 1})...";
+                    });
+
+                    // Extract float[] sub-array for this segment's time range (16kHz)
+                    int startIndex = (int)(seg.Start * 16000);
+                    int endIndex = Math.Min((int)(seg.End * 16000), fullSamples.Length);
+                    int length = endIndex - startIndex;
+
+                    if (length <= 0)
+                        continue;
+
+                    var segmentSamples = new float[length];
+                    Array.Copy(fullSamples, startIndex, segmentSamples, 0, length);
+
+                    // Transcribe using sherpa-onnx ASR
+                    var text = await _asrService.TranscribeAsync(segmentSamples);
+
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        transcriptionSegments.Add(new TranscriptionSegment
+                        {
+                            SpeakerIndex = seg.Speaker,
+                            SpeakerLabel = $"Speaker {seg.Speaker + 1}",
+                            Text = text,
+                            StartSeconds = seg.Start,
+                            EndSeconds = seg.End
+                        });
+                    }
+                }
+
+                // Step 3: Build DiarizedTranscription and update UI
+                _diarizedTranscription = new DiarizedTranscription
+                {
+                    Segments = transcriptionSegments,
+                    SpeakerCount = speakerCount,
+                    TotalDuration = TimeSpan.FromSeconds(segments.Last().End)
+                };
+
+                Dispatcher.Invoke(() =>
+                {
+                    LiveTranscription = _diarizedTranscription.ToFlatText();
+                    TranscriptionStatus = "Transcription completed";
+                    TranscriptionStatusColor = Brushes.Green;
+                    IsDiarizing = false;
+                    DiarizationStatus = $"Complete: {speakerCount} speaker{(speakerCount != 1 ? "s" : "")}, {transcriptionSegments.Count} segments";
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    TranscriptionStatus = "Diarization cancelled";
+                    TranscriptionStatusColor = Brushes.Orange;
+                    IsDiarizing = false;
+                    DiarizationStatus = "Cancelled";
+                });
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    TranscriptionStatus = $"Diarization error: {ex.Message}";
+                    TranscriptionStatusColor = Brushes.Red;
+                    IsDiarizing = false;
+                    DiarizationStatus = $"Error: {ex.Message}";
+                });
+            }
+            finally
+            {
+                // Clean up converted WAV file
+                _ = Task.Delay(3000).ContinueWith(_ =>
+                {
+                    try { File.Delete(convertedWavPath); } catch { }
+                });
+
+                _diarizationCts?.Dispose();
+                _diarizationCts = null;
+            }
+        }
+
         private string ConvertAudioForSpeechRecognition(string inputFile)
         {
             try
@@ -876,17 +1108,14 @@ Focus on extracting concrete action items with assignees when mentioned. If no s
             {
                 if (_loopbackCapture != null && _isRecording)
                 {
-                    // Stop capturing system audio
-                    _loopbackCapture.StopRecording();
-                    
                     _isRecording = false;
                     RecordingButtonText = "Start Recording";
                     RecordingButtonColor = Brushes.Green;
                     TranscriptionStatus = "Processing audio...";
                     TranscriptionStatusColor = Brushes.Orange;
-                    
-                    // Process the recorded audio
-                    ProcessCapturedAudio();
+
+                    // Stop capturing — this triggers OnSystemAudioRecordingStopped which calls ProcessCapturedAudio
+                    _loopbackCapture.StopRecording();
                 }
             }
             catch (Exception ex)

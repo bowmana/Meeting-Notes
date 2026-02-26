@@ -45,7 +45,44 @@ The core note-taking experience. Opens when user starts a new meeting.
 - Status indicator with color dot (Gray=Ready, Green=Recording/Completed, Orange=Listening/Processing, Red=Error)
 - Start/Stop Recording toggle button (Green when idle, Red when recording)
 - Scrollable text area showing transcribed speech
-- Flow: Start Recording → WASAPI captures system audio → Stop Recording → Audio converted to 16kHz mono WAV → System.Speech processes → Text appended to transcription area
+- Flow: Start Recording → WASAPI captures system audio → Stop Recording → Audio converted to 16kHz mono WAV → sherpa-onnx diarization → float[] sub-array per segment → sherpa-onnx ASR (user-selected model: Moonshine or Whisper) per segment → Speaker-labeled text appended to transcription area
+
+### Speaker Diarization (Post-Recording)
+
+After recording stops, the full captured audio is analyzed by sherpa-onnx to identify which speaker said what. This is a post-processing step — not real-time.
+
+**Processing Flow:**
+1. User clicks "Stop Recording"
+2. Audio is converted to 16kHz mono WAV (same as for speech recognition)
+3. sherpa-onnx runs offline diarization: segmentation → embedding → clustering
+4. Progress bar shows diarization progress with percentage (e.g., "Processing audio... 45%")
+5. Detected speaker count displayed (e.g., "3 speakers detected")
+6. Full WAV loaded as float[] once; for each speaker segment, a float[] sub-array is indexed by timestamp and fed to the user-selected sherpa-onnx ASR model (Moonshine or Whisper, configurable in Settings) for transcription — no audio file slicing
+7. Final transcription shows speaker-labeled text with timestamps
+
+**Transcription Format:**
+```
+Speaker 1 [0:00 - 0:15]: Hello everyone, welcome to the meeting.
+Speaker 2 [0:15 - 0:32]: Thanks for having me. Let's get started.
+Speaker 1 [0:32 - 0:48]: Great. First item on the agenda...
+```
+
+**UI Elements:**
+- Diarization progress bar (visible during processing, hidden otherwise)
+- Status text showing current step ("Running speaker diarization...", "Transcribing segments...", "Complete")
+- Speaker count badge (e.g., "3 speakers")
+
+**Model Requirement:**
+- Requires diarization models to be downloaded (~36 MB) via Settings > Speaker Diarization > Download Models
+- Requires at least one ASR model to be downloaded via Settings > Speech Recognition (5 models available: Moonshine Tiny/Base, Whisper tiny.en/base.en/small.en)
+- If the selected ASR model is not downloaded: show clear error message. User must download a model in Settings first.
+- If diarization models not downloaded: transcription proceeds without speaker labels, with status message "Speaker diarization unavailable — download models in Settings"
+- If diarization fails at runtime: clear error shown in status area, no transcript produced for that recording
+
+**Speaker Labels:**
+- Generic labels: "Speaker 1", "Speaker 2", etc. (no voice recognition / name matching)
+- Labels are consistent within a single recording (Speaker 1 is always the same voice)
+- Number of speakers auto-detected by default, or user can set a fixed count in Settings
 
 ### Your Notes (Manual)
 - Free-form text area for manual notes alongside transcription
@@ -79,7 +116,8 @@ The core note-taking experience. Opens when user starts a new meeting.
 | Notion Property | Source |
 |----------------|--------|
 | Title | Meeting Title field |
-| Transcription | Live Transcription text |
+| Transcription | Live Transcription text (speaker-labeled when diarization available) |
+| Speakers | Number of speakers detected (e.g., "3 speakers detected") |
 | My Notes | Manual Notes text |
 | AI Summary | Generated summary text |
 | Key Points | Bullet list of key points |

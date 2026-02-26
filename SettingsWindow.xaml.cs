@@ -9,6 +9,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -29,6 +30,8 @@ namespace MeetingNotesApp
         private ObservableCollection<NotionWorkspaceIntegration> _workspaceIntegrations;
         private ObservableCollection<DetectedApp> _detectedApps;
         private ObservableCollection<NotionDatabase> _availableDatabases;
+        private CancellationTokenSource? _diarizationDownloadCts;
+        private CancellationTokenSource? _asrDownloadCts;
 
         public SettingsWindow(ObservableCollection<NotionWorkspaceIntegration> sharedWorkspaces = null)
         {
@@ -60,6 +63,15 @@ namespace MeetingNotesApp
 
             // Initialize editing workspace
             EditingWorkspace = new NotionWorkspaceIntegration();
+
+            // Initialize diarization UI state
+            RefreshDiarizationModelList();
+            UpdateEmbeddingModelStatus();
+            DiarizationNumSpeakersBox.Text = AppSettings.Diarization.NumSpeakers.ToString();
+            DiarizationThresholdBox.Text = AppSettings.Diarization.Threshold.ToString("F1");
+
+            // Initialize ASR model list UI
+            RefreshASRModelList();
         }
 
         public bool IsCallDetectionEnabled
@@ -451,6 +463,313 @@ namespace MeetingNotesApp
             }
         }
 
+        // --- Speaker Diarization Handlers ---
+
+        private ObservableCollection<DiarizationSegmentationModelViewModel> _diarizationModels = new();
+
+        private void RefreshDiarizationModelList()
+        {
+            _diarizationModels.Clear();
+            foreach (var def in DiarizationModelDefinition.AllModels)
+            {
+                _diarizationModels.Add(new DiarizationSegmentationModelViewModel(def));
+            }
+            DiarizationModelListControl.ItemsSource = _diarizationModels;
+
+            // Populate active model combobox with downloaded models only
+            var downloaded = _diarizationModels.Where(m => m.IsDownloaded).ToList();
+            ActiveDiarizationModelComboBox.ItemsSource = downloaded;
+
+            var current = downloaded.FirstOrDefault(m => m.ModelType == AppSettings.Diarization.SelectedSegmentationModel)
+                          ?? downloaded.FirstOrDefault();
+            ActiveDiarizationModelComboBox.SelectedItem = current;
+        }
+
+        private void OnActiveDiarizationModelChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ActiveDiarizationModelComboBox.SelectedItem is DiarizationSegmentationModelViewModel vm)
+            {
+                AppSettings.Diarization.SelectedSegmentationModel = vm.ModelType;
+                AppSettings.SaveSettings();
+            }
+        }
+
+        private void UpdateEmbeddingModelStatus()
+        {
+            if (DiarizationModelManager.IsEmbeddingModelDownloaded)
+            {
+                EmbeddingModelStatusDot.Fill = Brushes.Green;
+                EmbeddingModelStatusText.Text = "Downloaded";
+                DownloadEmbeddingModelButton.Visibility = Visibility.Collapsed;
+                DeleteEmbeddingModelButton.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                EmbeddingModelStatusDot.Fill = Brushes.Gray;
+                EmbeddingModelStatusText.Text = "Not downloaded";
+                DownloadEmbeddingModelButton.Visibility = Visibility.Visible;
+                DeleteEmbeddingModelButton.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private async void OnDownloadDiarizationSegModelClicked(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.Tag is not DiarizationSegmentationModelType modelType)
+                return;
+
+            _diarizationDownloadCts = new CancellationTokenSource();
+            DiarizationSegDownloadProgress.Visibility = Visibility.Visible;
+
+            var modelManager = new DiarizationModelManager();
+            var progress = new Progress<(double percent, string status)>(p =>
+            {
+                DiarizationSegDownloadProgressBar.Value = p.percent;
+                DiarizationSegDownloadStatusText.Text = p.status;
+            });
+
+            try
+            {
+                await modelManager.DownloadSegmentationModelAsync(modelType, progress, _diarizationDownloadCts.Token);
+                RefreshDiarizationModelList();
+            }
+            catch (OperationCanceledException)
+            {
+                DiarizationSegDownloadStatusText.Text = "Download cancelled.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to download model: {ex.Message}",
+                    "Download Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                DiarizationSegDownloadProgress.Visibility = Visibility.Collapsed;
+                _diarizationDownloadCts?.Dispose();
+                _diarizationDownloadCts = null;
+            }
+        }
+
+        private void OnCancelDiarizationSegDownloadClicked(object sender, RoutedEventArgs e)
+        {
+            _diarizationDownloadCts?.Cancel();
+        }
+
+        private void OnDeleteDiarizationSegModelClicked(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.Tag is not DiarizationSegmentationModelType modelType)
+                return;
+
+            var def = DiarizationModelDefinition.Get(modelType);
+            var result = MessageBox.Show(
+                $"Delete {def.DisplayName}? You can re-download it at any time.",
+                "Delete Model", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    DiarizationModelManager.DeleteSegmentationModel(modelType);
+
+                    if (AppSettings.Diarization.SelectedSegmentationModel == modelType)
+                    {
+                        var remaining = DiarizationModelManager.GetDownloadedSegmentationModels();
+                        if (remaining.Count > 0)
+                            AppSettings.Diarization.SelectedSegmentationModel = remaining.First();
+                        AppSettings.SaveSettings();
+                    }
+
+                    RefreshDiarizationModelList();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to delete model: {ex.Message}",
+                        "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private async void OnDownloadEmbeddingModelClicked(object sender, RoutedEventArgs e)
+        {
+            _diarizationDownloadCts = new CancellationTokenSource();
+            DownloadEmbeddingModelButton.IsEnabled = false;
+            EmbeddingDownloadProgress.Visibility = Visibility.Visible;
+
+            var modelManager = new DiarizationModelManager();
+            var progress = new Progress<(double percent, string status)>(p =>
+            {
+                EmbeddingDownloadProgressBar.Value = p.percent;
+                EmbeddingDownloadStatusText.Text = p.status;
+            });
+
+            try
+            {
+                await modelManager.DownloadEmbeddingModelAsync(progress, _diarizationDownloadCts.Token);
+                UpdateEmbeddingModelStatus();
+            }
+            catch (OperationCanceledException)
+            {
+                EmbeddingDownloadStatusText.Text = "Download cancelled.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to download embedding model: {ex.Message}",
+                    "Download Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                DownloadEmbeddingModelButton.IsEnabled = true;
+                EmbeddingDownloadProgress.Visibility = Visibility.Collapsed;
+                _diarizationDownloadCts?.Dispose();
+                _diarizationDownloadCts = null;
+            }
+        }
+
+        private void OnDeleteEmbeddingModelClicked(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show(
+                "Delete speaker embedding model? You can re-download it at any time (~28 MB).",
+                "Delete Model", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    DiarizationModelManager.DeleteEmbeddingModel();
+                    UpdateEmbeddingModelStatus();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to delete model: {ex.Message}",
+                        "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        // --- Speech Recognition (ASR) Handlers ---
+
+        private ObservableCollection<ASRModelViewModel> _asrModels = new();
+        public ObservableCollection<ASRModelViewModel> ASRModels => _asrModels;
+
+        private void RefreshASRModelList()
+        {
+            _asrModels.Clear();
+            foreach (var def in ASRModelDefinition.AllModels)
+            {
+                _asrModels.Add(new ASRModelViewModel(def));
+            }
+            ASRModelListControl.ItemsSource = _asrModels;
+
+            // Refresh active model ComboBox — only show downloaded models
+            var downloaded = _asrModels.Where(m => m.IsDownloaded).ToList();
+            ActiveASRModelComboBox.ItemsSource = downloaded;
+            ActiveASRModelComboBox.DisplayMemberPath = "DisplayName";
+
+            // Select the currently persisted model if it's downloaded
+            var current = downloaded.FirstOrDefault(m => m.ModelType == AppSettings.ASR.SelectedModel)
+                          ?? downloaded.FirstOrDefault();
+
+            ActiveASRModelComboBox.SelectedItem = current;
+        }
+
+        private void OnActiveASRModelChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ActiveASRModelComboBox.SelectedItem is ASRModelViewModel vm)
+            {
+                AppSettings.ASR.SelectedModel = vm.ModelType;
+                AppSettings.SaveSettings();
+            }
+        }
+
+        private async void OnDownloadASRModelClicked(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.Tag is not ASRModelType modelType)
+                return;
+
+            _asrDownloadCts = new CancellationTokenSource();
+            ASRDownloadProgress.Visibility = Visibility.Visible;
+
+            var modelManager = new ASRModelManager();
+            var progress = new Progress<(double percent, string status)>(p =>
+            {
+                ASRDownloadProgressBar.Value = p.percent;
+                ASRDownloadStatusText.Text = p.status;
+            });
+
+            try
+            {
+                await modelManager.DownloadModelsAsync(modelType, progress, _asrDownloadCts.Token);
+                RefreshASRModelList();
+            }
+            catch (OperationCanceledException)
+            {
+                ASRDownloadStatusText.Text = "Download cancelled.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to download model: {ex.Message}",
+                    "Download Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ASRDownloadStatusText.Text = $"Download failed: {ex.Message}";
+            }
+            finally
+            {
+                ASRDownloadProgress.Visibility = Visibility.Collapsed;
+                _asrDownloadCts?.Dispose();
+                _asrDownloadCts = null;
+            }
+        }
+
+        private void OnCancelASRDownloadClicked(object sender, RoutedEventArgs e)
+        {
+            _asrDownloadCts?.Cancel();
+        }
+
+        private void OnDeleteASRModelClicked(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.Tag is not ASRModelType modelType)
+                return;
+
+            var def = ASRModelDefinition.Get(modelType);
+            var result = MessageBox.Show(
+                $"Delete {def.DisplayName}? You can re-download it at any time ({def.SizeText}).",
+                "Delete Model", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    ASRModelManager.DeleteModels(modelType);
+
+                    // If we deleted the active model, switch to another downloaded model
+                    if (AppSettings.ASR.SelectedModel == modelType)
+                    {
+                        var remaining = ASRModelManager.GetDownloadedModels();
+                        AppSettings.ASR.SelectedModel = remaining.FirstOrDefault();
+                        AppSettings.SaveSettings();
+                    }
+
+                    RefreshASRModelList();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to delete model: {ex.Message}",
+                        "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            // Save diarization settings before closing
+            if (int.TryParse(DiarizationNumSpeakersBox.Text, out var numSpeakers))
+                AppSettings.Diarization.NumSpeakers = numSpeakers;
+
+            if (float.TryParse(DiarizationThresholdBox.Text, out var threshold))
+                AppSettings.Diarization.Threshold = Math.Clamp(threshold, 0f, 1f);
+
+            AppSettings.SaveSettings();
+            base.OnClosing(e);
+        }
+
         public event PropertyChangedEventHandler PropertyChanged;
 
         protected virtual void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
@@ -563,22 +882,93 @@ namespace MeetingNotesApp
         public string Type { get; set; } // "Database" or "Page"
     }
 
+    /// <summary>
+    /// ViewModel for displaying ASR models in the Settings model browser.
+    /// </summary>
+    public class ASRModelViewModel
+    {
+        public ASRModelType ModelType { get; }
+        public string DisplayName { get; }
+        public string Description { get; }
+        public string SizeText { get; }
+        public bool IsDownloaded { get; }
+        public string StatusText => IsDownloaded ? "Downloaded" : "Not downloaded";
+        public Brush StatusColor => IsDownloaded ? Brushes.Green : Brushes.Gray;
+        public Visibility DownloadButtonVisibility => IsDownloaded ? Visibility.Collapsed : Visibility.Visible;
+        public Visibility DeleteButtonVisibility => IsDownloaded ? Visibility.Visible : Visibility.Collapsed;
+
+        public ASRModelViewModel(ASRModelDefinition def)
+        {
+            ModelType = def.ModelType;
+            DisplayName = def.DisplayName;
+            Description = def.Description;
+            SizeText = def.SizeText;
+            IsDownloaded = ASRModelManager.AreModelsDownloaded(def.ModelType);
+        }
+    }
+
+    /// <summary>
+    /// ViewModel for displaying diarization segmentation models in the Settings model browser.
+    /// </summary>
+    public class DiarizationSegmentationModelViewModel
+    {
+        public DiarizationSegmentationModelType ModelType { get; }
+        public string DisplayName { get; }
+        public string Description { get; }
+        public string SizeText { get; }
+        public bool IsDownloaded { get; }
+        public string StatusText => IsDownloaded ? "Downloaded" : "Not downloaded";
+        public Brush StatusColor => IsDownloaded ? Brushes.Green : Brushes.Gray;
+        public Visibility DownloadButtonVisibility => IsDownloaded ? Visibility.Collapsed : Visibility.Visible;
+        public Visibility DeleteButtonVisibility => IsDownloaded ? Visibility.Visible : Visibility.Collapsed;
+
+        public DiarizationSegmentationModelViewModel(DiarizationModelDefinition def)
+        {
+            ModelType = def.ModelType;
+            DisplayName = def.DisplayName;
+            Description = def.Description;
+            SizeText = def.SizeText;
+            IsDownloaded = DiarizationModelManager.IsSegmentationModelDownloaded(def.ModelType);
+        }
+    }
+
+    public class DiarizationSettings
+    {
+        public int NumSpeakers { get; set; } = -1;         // -1 = auto-detect number of speakers
+        public float Threshold { get; set; } = 0.7f;       // Clustering threshold (lower = more speakers, higher = fewer)
+        public float MinDurationOn { get; set; } = 0.5f;   // Minimum speech segment duration in seconds
+        public float MinDurationOff { get; set; } = 0.5f;  // Minimum silence gap between segments in seconds
+        public DiarizationSegmentationModelType SelectedSegmentationModel { get; set; } = DiarizationSegmentationModelType.Pyannote3;
+    }
+
+    public class ASRSettings
+    {
+        public ASRModelType SelectedModel { get; set; } = ASRModelType.MoonshineTiny;
+    }
+
     public static class AppSettings
     {
+        public static DiarizationSettings Diarization { get; set; } = new DiarizationSettings();
+        public static ASRSettings ASR { get; set; } = new ASRSettings();
+
         private static string GetSettingsFilePath()
         {
             var appDataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MeetingNotesApp");
             Directory.CreateDirectory(appDataPath);
             return Path.Combine(appDataPath, "appsettings.json");
         }
-        
+
         public static void SaveSettings()
         {
-            var settings = new { };
+            var settings = new
+            {
+                Diarization = Diarization,
+                ASR = ASR
+            };
             var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(GetSettingsFilePath(), json);
         }
-        
+
         public static void LoadSettings()
         {
             var filePath = GetSettingsFilePath();
@@ -587,8 +977,21 @@ namespace MeetingNotesApp
                 try
                 {
                     var json = File.ReadAllText(filePath);
-                    var settings = JsonSerializer.Deserialize<JsonElement>(json);
-                    // No settings to load for LMStudio
+                    var doc = JsonDocument.Parse(json);
+
+                    if (doc.RootElement.TryGetProperty("Diarization", out var diarizationElement))
+                    {
+                        var diarization = JsonSerializer.Deserialize<DiarizationSettings>(diarizationElement.GetRawText());
+                        if (diarization != null)
+                            Diarization = diarization;
+                    }
+
+                    if (doc.RootElement.TryGetProperty("ASR", out var asrElement))
+                    {
+                        var asr = JsonSerializer.Deserialize<ASRSettings>(asrElement.GetRawText());
+                        if (asr != null)
+                            ASR = asr;
+                    }
                 }
                 catch
                 {

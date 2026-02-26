@@ -111,12 +111,92 @@
 
 ---
 
-## v0.2 — Transcription Improvements
+## v0.2 — Speaker Diarization (sherpa-onnx)
 
-- [ ] OpenAI Whisper integration
-- [ ] Real-time streaming transcription
-- [ ] Speaker diarization (basic)
-- [ ] Handle long recordings
+### Project Setup
+- [x] Add `org.k2fsa.sherpa.onnx` NuGet package (v1.12.26)
+- [x] Add `AllowUnsafeBlocks=true` to csproj PropertyGroup
+- [x] Verify build succeeds with sherpa-onnx native libraries
+
+### Model Infrastructure
+- [x] Create `DiarizationModelManager.cs` (model paths, download, existence checks, deletion)
+- [x] Add `DiarizationSettings` class to AppSettings (NumSpeakers, Threshold, MinDurationOn, MinDurationOff)
+- [x] Implement model download with progress (segmentation ~6 MB + embedding ~30 MB from GitHub releases)
+- [x] Persist diarization settings to `appsettings.json`
+
+### Data Models
+- [x] Create `TranscriptionSegment.cs` with `TranscriptionSegment` class (SpeakerIndex, SpeakerLabel, Text, StartSeconds, EndSeconds, TimestampDisplay, DisplayText)
+- [x] Create `DiarizedTranscription` class (List&lt;TranscriptionSegment&gt; Segments, SpeakerCount, TotalDuration, ToFlatText, ToPlainText)
+
+### Diarization Service
+- [x] Create `ISpeakerDiarizationService` interface (AreModelsAvailable, DiarizeAsync)
+- [x] Create `SherpaOnnxDiarizationService` implementation (WAV loading as float[], OfflineSpeakerDiarization engine, ProcessWithCallback, progress reporting)
+- [x] Implement adjacent same-speaker segment merging
+- [x] Implement proper disposal of native sherpa-onnx resources
+
+### Pipeline Integration (NoteTakingWindow)
+- [x] Add diarization fields and bindable properties (DiarizationStatus, DiarizationProgress, IsDiarizing, DetectedSpeakerCount)
+- [x] Modify post-recording flow: StopRecording → convert WAV → run diarization → per-segment transcription
+- [x] Implement audio slicing helper (extract time range from WAV using NAudio)
+- [x] Per-segment System.Speech transcription with speaker labels
+- [x] Build DiarizedTranscription and update LiveTranscription display
+- [x] Update AI summary prompt for speaker-aware summarization (attribute action items to speakers)
+- [x] Update Notion save with speaker-labeled transcription + "Speakers" property
+- [x] Handle "models not downloaded" case: proceed with existing transcription + informational status message
+
+### UI
+- [x] Add diarization progress bar to NoteTakingWindow.xaml (visible during processing)
+- [x] Add speaker count display in transcription area
+- [x] Add `BooleanToVisibilityConverter` to App.xaml resources
+- [x] Add "Speaker Diarization" section to SettingsWindow.xaml (model download, status, settings)
+- [x] Implement model download/delete handlers in SettingsWindow.xaml.cs
+
+### Documentation
+- [x] Update `docs/techstack.md` with sherpa-onnx section and NuGet table entry
+- [x] Update `docs/features.md` with speaker diarization feature spec
+- [x] Update `docs/roadmap.md` with detailed v0.2 sherpa-onnx items
+- [x] Update `docs/lessons.md` with sherpa-onnx offline-only constraint
+- [x] Update `docs/datamodels.md` with TranscriptionSegment, DiarizedTranscription, DiarizationSettings
+- [x] Update `docs/folder_filestructure.md` with new files and storage locations
+- [x] Update `docs/dev-workflow.md` with new NuGet package and known limitations
+- [x] Update `docs/checklist.md` with detailed v0.2 task breakdown
+
+### Speech Recognition (Moonshine ASR)
+- [x] Replace System.Speech with sherpa-onnx OfflineRecognizer (Moonshine Tiny int8)
+- [x] Create AudioHelper.cs (shared LoadWavAsFloats utility)
+- [x] Create ASRModelManager.cs (model download, paths, existence checks)
+- [x] Create ISpeechRecognitionService.cs interface
+- [x] Create SherpaOnnxASRService.cs (OfflineRecognizer with lazy-cached recognizer)
+- [x] Add Speech Recognition section to SettingsWindow (model download UI)
+- [x] Rewrite NoteTakingWindow transcription pipeline (float[] sub-arrays, no audio slicing)
+- [x] Remove System.Speech NuGet package from csproj
+- [x] Update documentation
+
+### Multi-Model ASR (Whisper + Moonshine Selection)
+- [x] Create ASRModelDefinition.cs (enum + static registry for 5 models: Moonshine Tiny/Base, Whisper tiny.en/base.en/small.en)
+- [x] Refactor ASRModelManager.cs for multi-model support (download/delete/paths per model type)
+- [x] Update ISpeechRecognitionService.cs with CurrentModelType and SetModel
+- [x] Update SherpaOnnxASRService.cs for Moonshine vs Whisper config branching
+- [x] Add ASRSettings class to AppSettings (persisted selected model)
+- [x] Redesign Settings Speech Recognition section (model browser, per-model download/delete, active model selector)
+- [x] Wire NoteTakingWindow to use persisted model selection
+- [x] Update documentation
+
+### Bug Fixes & Infrastructure
+- [x] Fix crash on Stop Recording — missing `return` in ProcessCapturedAudio() after "models not available" check
+- [x] Add CrashLogService.cs — global crash logging (AppDomain + Dispatcher + TaskScheduler) to %AppData%/crashlog.txt
+- [x] Register CrashLogService in App.xaml.cs OnStartup
+- [x] Fix native segfault crash — sherpa-onnx config structs require assign-back pattern (SherpaOnnxASRService.cs + SherpaOnnxDiarizationService.cs)
+
+### Multi-Model Diarization Segmentation
+- [x] Create DiarizationModelDefinition.cs (enum + static registry: Pyannote 3.0, Reverb v1)
+- [x] Refactor DiarizationModelManager.cs for per-model segmentation download/delete/paths
+- [x] Add SelectedSegmentationModel to DiarizationSettings (persisted to appsettings.json)
+- [x] Update SherpaOnnxDiarizationService to use selected segmentation model path
+- [x] Add segmentation model browser UI to Settings (ComboBox + per-model download/delete)
+- [x] Separate embedding model download/delete UI in Settings
+- [x] Add DiarizationSegmentationModelViewModel class
+- [x] Update documentation
 
 ---
 

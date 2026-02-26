@@ -9,7 +9,7 @@
 - Main window with database selection and recent notes
 - Note-taking window with all sections (transcription, notes, summary, key points, action items)
 - System audio capture via WASAPI loopback (NAudio)
-- Speech-to-text via Windows Speech Recognition (System.Speech)
+- Speech-to-text via Windows Speech Recognition (System.Speech) — replaced by sherpa-onnx Moonshine Tiny ASR in v0.2
 - AI summaries via LMStudio (replaced by LLamaSharp/Cloud API in v0.1.5)
 - Notion API: save notes with structured properties, fetch recent notes
 - Settings: Notion workspace CRUD (add/edit/delete)
@@ -47,12 +47,18 @@
 
 ---
 
-### v0.2 — Transcription Improvements
+### v0.2 — Speaker Diarization + Transcription Improvements
 
-- OpenAI Whisper integration for higher-accuracy transcription
-- Real-time streaming transcription (instead of record → stop → process)
-- Speaker diarization (basic — identify speaker changes)
-- Transcription confidence display
+**Goal:** Add speaker identification to transcription using sherpa-onnx offline diarization, so the app knows who said what. Improve the transcription pipeline to produce speaker-labeled output that feeds into AI summarization and Notion saving.
+
+- **Speaker diarization via sherpa-onnx** — offline, post-recording speaker identification using pyannote segmentation + 3D-Speaker embedding ONNX models (~36 MB total). Processes full audio after recording stops, identifies speaker turns, produces labeled segments ("Speaker 1 [0:00-0:15]: text...").
+- **Diarization model download manager** — download UI in Settings (similar to LLamaSharp model download), model status indicator, ~36 MB one-time download to `%LocalAppData%/MeetingNotesApp/models/sherpa-onnx/`
+- **Multi-model ASR via sherpa-onnx** — replaced System.Speech with sherpa-onnx OfflineRecognizer. Supports 5 user-selectable models (Moonshine Tiny/Base, Whisper tiny.en/base.en/small.en). All use the same org.k2fsa.sherpa.onnx package — zero additional dependencies. Models downloaded independently in Settings. Eliminated audio file slicing; uses float[] sub-array indexing per speaker segment.
+- **Per-segment transcription** — after diarization identifies speaker segments, each segment's audio (as float[] sub-array) is individually fed to sherpa-onnx Moonshine ASR for transcription, producing speaker-attributed text
+- **TranscriptionSegment data model** — structured data (SpeakerIndex, SpeakerLabel, Text, StartSeconds, EndSeconds) replaces the flat LiveTranscription string
+- **Speaker-aware AI summarization** — LLamaSharp prompt updated to leverage speaker labels for better action item attribution and discussion structure
+- **Speaker-labeled Notion transcription** — Notion save includes speaker labels and timestamps, plus a "Speakers" property showing detected count
+- **Diarization progress UI** — progress bar and status text in NoteTakingWindow during post-recording processing
 - Handle long recordings without memory issues
 
 ---

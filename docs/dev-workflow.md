@@ -14,7 +14,7 @@
 ### Command Line
 ```bash
 cd "meeting notes"
-dotnet restore        # Restore NuGet packages (NAudio, System.Speech)
+dotnet restore        # Restore NuGet packages (NAudio, sherpa-onnx, LLamaSharp)
 dotnet build          # Build the project
 dotnet run            # Run the application
 ```
@@ -38,10 +38,10 @@ dotnet run            # Run the application
 | Package | Version | Purpose |
 |---------|---------|---------|
 | NAudio | 2.2.1 | System audio capture (WASAPI loopback) |
-| System.Speech | 8.0.0 | Windows speech recognition engine |
 | LLamaSharp | 0.26.0 | In-process LLM inference (Private Mode) |
 | LLamaSharp.Backend.Cpu | 0.26.0 | CPU inference backend |
 | LLamaSharp.Backend.Cuda12 | 0.26.0 | NVIDIA GPU inference backend (optional) |
+| org.k2fsa.sherpa.onnx | 1.12.26 | Offline speaker diarization + Moonshine Tiny ASR (sherpa-onnx, ONNX models) |
 | Microsoft.Extensions.Logging.Debug | 8.0.0 | Debug logging |
 
 ## First-Time Setup
@@ -83,7 +83,7 @@ dotnet run            # Run the application
 - This means it records what you hear through your speakers/headphones
 - For meeting transcription, your meeting audio must play through your default audio output device
 - Audio is captured as the system default format, then converted to 16kHz mono WAV for speech recognition
-- Windows Speech Recognition processes the audio after you stop recording (batch mode, not streaming)
+- sherpa-onnx Moonshine Tiny ASR processes the audio after you stop recording (batch mode, not streaming)
 
 ## File Locations
 
@@ -92,15 +92,40 @@ dotnet run            # Run the application
 | Source code | Project root |
 | Workspace config | `%AppData%/MeetingNotesApp/workspaces.json` |
 | App settings | `%AppData%/MeetingNotesApp/appsettings.json` |
-| AI model (Private Mode) | `%AppData%/MeetingNotesApp/models/Phi-4-mini-instruct-Q4_K_M.gguf` |
+| AI model (Private Mode) | `%LocalAppData%/MeetingNotesApp/models/Phi-4-mini-instruct-Q4_K_M.gguf` |
+| Diarization models | `%LocalAppData%/MeetingNotesApp/models/sherpa-onnx/` (~36 MB) |
+| ASR models | `%LocalAppData%/MeetingNotesApp/models/sherpa-onnx/moonshine-tiny-int8/` (~125 MB) |
 | Temp audio files | `%TEMP%/*.wav` (auto-cleaned after processing) |
 
-## Known Limitations (v0.1)
+## Speaker Diarization Setup
+
+1. Open Settings → Speaker Diarization section
+2. Click "Download Models" (~36 MB download from GitHub releases)
+3. Wait for download to complete (progress bar shown)
+4. Models are stored at `%LocalAppData%/MeetingNotesApp/models/sherpa-onnx/`
+5. Speaker diarization will now run automatically after each recording stops
+6. Optional: adjust number of speakers (default: auto-detect) and clustering threshold in advanced settings
+
+## Speech Recognition Setup
+
+1. Open Settings → Speech Recognition section
+2. Click "Download Models" (~125 MB download — Moonshine Tiny int8 ASR model)
+3. Wait for download to complete (progress bar shown)
+4. Models are stored at `%LocalAppData%/MeetingNotesApp/models/sherpa-onnx/moonshine-tiny-int8/` (5 files)
+5. ASR will now run automatically on each speaker segment after diarization completes
+6. Uses the same `org.k2fsa.sherpa.onnx` NuGet package as diarization — no additional dependencies
+
+## Known Limitations (v0.1 / v0.2)
 
 - Call detection toggles are UI-only — no actual process monitoring yet
-- Speech recognition is Windows built-in (decent accuracy, not Whisper-level)
+- Speech recognition uses Moonshine Tiny int8 (~12% WER) — good accuracy but not state-of-the-art; requires ~125 MB model download
 - Transcription is batch (record → stop → process), not real-time streaming
 - Notion rich_text properties have a 2000-character limit per block
 - Private Mode requires a one-time 2.49 GB model download on first use
 - Private Mode on CPU takes ~15-30 seconds per summary (GPU is ~3 seconds)
 - General settings (start minimized, auto-save, notifications) are UI-only — not yet functional
+- Speaker diarization is post-recording only (not real-time) — processes full audio after Stop Recording
+- Diarization models require a one-time ~36 MB download
+- Speaker labels are generic ("Speaker 1", "Speaker 2") — no voice recognition or name matching
+- Moonshine Tiny handles variable-length segments well, but very short segments (<1 second) may produce less accurate results
+- Diarization processing time scales with recording length (~30-120 seconds for a 30-minute meeting on CPU)
