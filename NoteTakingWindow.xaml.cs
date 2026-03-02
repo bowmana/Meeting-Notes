@@ -13,6 +13,8 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using NAudio.Wave;
 using NAudio.CoreAudioApi;
+using MeetingNotesApp.Models;
+using MeetingNotesApp.Services;
 
 namespace MeetingNotesApp
 {
@@ -43,6 +45,7 @@ namespace MeetingNotesApp
         private Brush _recordingButtonColor = Brushes.Green;
         private string _transcriptionStatus = "Ready to record";
         private Brush _transcriptionStatusColor = Brushes.Gray;
+        private string _saveButtonText = "Save Notes";
 
         // Speaker diarization fields
         private ISpeakerDiarizationService _diarizationService;
@@ -52,6 +55,16 @@ namespace MeetingNotesApp
         private double _diarizationProgress = 0;
         private bool _isDiarizing = false;
         private int _detectedSpeakerCount = 0;
+
+        // Speaker identification fields
+        private ObservableCollection<SpeakerEntry> _speakerEntries = new();
+        private ISpeakerNameInferenceService _nameInferenceService;
+        private SpeakerEmbeddingHelper _embeddingHelper;
+        private SpeakerProfileService _speakerProfileService;
+
+        // Audio data retained for speaker enrollment after naming
+        private float[]? _lastFullAudioSamples;
+        private List<(float Start, float End, int Speaker)>? _lastDiarizationSegments;
 
         public NoteTakingWindow(MeetingInfo meetingInfo = null)
         {
@@ -98,32 +111,35 @@ namespace MeetingNotesApp
             AppSettings.LoadSettings();
             _asrService = new SherpaOnnxASRService(AppSettings.ASR.SelectedModel);
             _diarizationService = new SherpaOnnxDiarizationService();
+            _nameInferenceService = new SpeakerNameInferenceService();
+            _embeddingHelper = new SpeakerEmbeddingHelper();
+            _speakerProfileService = new SpeakerProfileService(_embeddingHelper);
 
             // Initialize meeting info if provided
             if (_meetingInfo != null)
             {
                 MeetingTitle = _meetingInfo.Title;
                 MeetingStartTime = _meetingInfo.StartTime.ToString("MM/dd/yy HH:mm");
-                MeetingPlatform = _meetingInfo.Workspace?.WorkspaceName ?? "Unknown Platform";
-                
+                MeetingPlatform = _meetingInfo.Integration?.DisplayName ?? "Unknown Platform";
+                SaveButtonText = _meetingInfo.Integration?.SaveButtonText ?? "Save Notes";
+
                 // Set database info
-                var workspace = _meetingInfo.Workspace;
-                if (workspace?.SelectedDatabase != null)
+                var integration = _meetingInfo.Integration;
+                if (integration is NotionIntegration notionInt && notionInt.SelectedDatabase != null)
                 {
-                    var dbName = workspace.SelectedDatabase.Name;
-                    // Remove the workspace suffix if it's already there
-                    if (dbName.Contains($"({workspace.WorkspaceName})"))
+                    var dbName = notionInt.SelectedDatabase.Name;
+                    if (dbName.Contains($"({integration.DisplayName})"))
                     {
                         DatabaseInfo = dbName;
                     }
                     else
                     {
-                        DatabaseInfo = $"{dbName} ({workspace.WorkspaceName})";
+                        DatabaseInfo = $"{dbName} ({integration.DisplayName})";
                     }
                 }
                 else
                 {
-                    DatabaseInfo = "No Database Selected";
+                    DatabaseInfo = integration?.TargetDescription ?? "No Database Selected";
                 }
             }
 
@@ -294,6 +310,16 @@ namespace MeetingNotesApp
             }
         }
 
+        public string SaveButtonText
+        {
+            get => _saveButtonText;
+            set
+            {
+                _saveButtonText = value;
+                OnPropertyChanged();
+            }
+        }
+
         public string DiarizationStatus
         {
             get => _diarizationStatus;
@@ -367,10 +393,11 @@ namespace MeetingNotesApp
                 _timer.Stop();
         }
 
-        private async void OnSaveToNotionClicked(object sender, RoutedEventArgs e)
+        private async void OnSaveClicked(object sender, RoutedEventArgs e)
         {
-            if (_meetingInfo?.Workspace == null || _meetingInfo.Workspace.SelectedDatabase == null)
+            if (_meetingInfo?.Integration == null)
             {
+                MessageBox.Show("No valid integration configured for saving.", "Save Error", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -381,172 +408,72 @@ namespace MeetingNotesApp
                 button.IsEnabled = false;
                 button.Content = "Saving...";
 
-                await SaveToNotionAsync();
+                var meetingData = BuildMeetingData();
+                var saveService = GetSaveService(_meetingInfo.Integration.ProviderType);
+                await saveService.SaveMeetingAsync(meetingData, _meetingInfo.Integration);
+
+                MessageBox.Show("Meeting notes saved successfully!", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error saving to Notion: {ex.Message}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error saving: {ex.Message}", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
                 // Re-enable the button
                 var button = sender as Button;
                 button.IsEnabled = true;
-                button.Content = "Save to Notion";
+                button.Content = SaveButtonText;
             }
         }
 
-        private async Task SaveToNotionAsync()
+        private MeetingData BuildMeetingData()
         {
-            var workspace = _meetingInfo.Workspace;
-            var database = workspace.SelectedDatabase;
-
-            using var httpClient = new HttpClient();
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", workspace.ApiKey);
-            httpClient.DefaultRequestHeaders.Add("Notion-Version", "2022-06-28");
-
-            // Format key points as bullet list
-            var keyPointsText = string.Join("\n", KeyPoints.Select(kp => $"• {kp.Text}"));
-
-            // Format action items as bullet list with assignees
-            var actionItemsText = string.Join("\n", ActionItems.Select(ai => $"• {ai.Text} (Assigned to: {ai.Assignee})"));
-
-            // Parse start time
-            DateTime? startTime = null;
-            if (DateTime.TryParse(MeetingStartTime, out var parsedTime))
-            {
-                startTime = parsedTime;
-            }
-
-            var properties = new Dictionary<string, object>
-            {
-                ["Title"] = new
-                {
-                    title = new[]
-                    {
-                        new { text = new { content = MeetingTitle } }
-                    }
-                },
-                ["Transcription"] = new
-                {
-                    rich_text = new[]
-                    {
-                        new { text = new { content = LiveTranscription } }
-                    }
-                },
-                ["My Notes"] = new
-                {
-                    rich_text = new[]
-                    {
-                        new { text = new { content = ManualNotes } }
-                    }
-                },
-                ["AI Summary"] = new
-                {
-                    rich_text = new[]
-                    {
-                        new { text = new { content = AiSummary } }
-                    }
-                },
-                ["Key Points"] = new
-                {
-                    rich_text = new[]
-                    {
-                        new { text = new { content = keyPointsText } }
-                    }
-                },
-                ["Action Items"] = new
-                {
-                    rich_text = new[]
-                    {
-                        new { text = new { content = actionItemsText } }
-                    }
-                },
-                ["Duration"] = new
-                {
-                    rich_text = new[]
-                    {
-                        new { text = new { content = MeetingDuration } }
-                    }
-                },
-                ["Organizer"] = new
-                {
-                    rich_text = new[]
-                    {
-                        new { text = new { content = MeetingOrganizer } }
-                    }
-                },
-                ["Attendees"] = new
-                {
-                    rich_text = new[]
-                    {
-                        new { text = new { content = MeetingAttendees } }
-                    }
-                }
-            };
-
-            // Add Speakers property if diarization was used
+            // Build speakers description from diarization data
+            var speakersDescription = "";
+            var speakerCount = 0;
             if (_diarizedTranscription != null && _diarizedTranscription.SpeakerCount > 0)
             {
-                properties["Speakers"] = new
-                {
-                    rich_text = new[]
-                    {
-                        new { text = new { content = $"{_diarizedTranscription.SpeakerCount} speakers detected" } }
-                    }
-                };
+                speakerCount = _diarizedTranscription.SpeakerCount;
+                var namedSpeakers = _diarizedTranscription.GetNamedAttendees();
+                speakersDescription = !string.IsNullOrWhiteSpace(namedSpeakers)
+                    ? $"{speakerCount} speakers: {namedSpeakers}"
+                    : $"{speakerCount} speakers detected";
             }
 
-            // Truncate transcription to Notion's 2000-char rich_text limit
-            if (properties.ContainsKey("Transcription"))
+            // Parse start time
+            DateTime date = default;
+            if (DateTime.TryParse(MeetingStartTime, out var parsedTime))
             {
-                var transcriptionText = LiveTranscription ?? "";
-                if (transcriptionText.Length > 2000)
-                {
-                    transcriptionText = transcriptionText.Substring(0, 1990) + "\n... (truncated)";
-                }
-                properties["Transcription"] = new
-                {
-                    rich_text = new[]
-                    {
-                        new { text = new { content = transcriptionText } }
-                    }
-                };
+                date = parsedTime;
             }
 
-            // Add Start Time if available
-            if (startTime.HasValue)
+            return new MeetingData
             {
-                properties["Date"] = new
-                {
-                    date = new { start = startTime.Value.ToString("yyyy-MM-ddTHH:mm:ss.fffZ") }
-                };
-            }
-
-            var requestBody = new
-            {
-                parent = new { database_id = database.Id },
-                properties = properties
+                Title = MeetingTitle,
+                Transcription = LiveTranscription ?? "",
+                ManualNotes = ManualNotes ?? "",
+                AiSummary = AiSummary ?? "",
+                KeyPoints = KeyPoints.Select(kp => kp.Text).ToList(),
+                ActionItems = ActionItems.Select(ai => (ai.Text, ai.Assignee)).ToList(),
+                Duration = MeetingDuration,
+                Organizer = MeetingOrganizer ?? "",
+                Attendees = MeetingAttendees ?? "",
+                Date = date,
+                SpeakerCount = speakerCount,
+                SpeakersDescription = speakersDescription
             };
+        }
 
-            var json = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions 
-            { 
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            });
-
-            // Debug info removed per user request
-
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var response = await httpClient.PostAsync("https://api.notion.com/v1/pages", content);
-
-            if (!response.IsSuccessStatusCode)
+        private static IMeetingSaveService GetSaveService(IntegrationProviderType providerType)
+        {
+            return providerType switch
             {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                var errorMessage = $"Notion API error: {response.StatusCode} - {errorContent}";
-                MessageBox.Show(errorMessage, "Notion API Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                throw new Exception(errorMessage);
-            }
+                IntegrationProviderType.Notion => new NotionSaveService(),
+                IntegrationProviderType.CsvExport => new CsvSaveService(),
+                IntegrationProviderType.ExcelExport => new ExcelSaveService(),
+                _ => throw new NotSupportedException($"Save service for {providerType} is not yet implemented.")
+            };
         }
 
         private async void OnGenerateSummaryClicked(object sender, RoutedEventArgs e)
@@ -713,6 +640,259 @@ IMPORTANT: Always create a summary based on the provided content, no matter how 
             return summary;
         }
 
+        private async Task RunSpeakerIdentificationPipelineAsync(
+            float[] fullSamples,
+            List<(float Start, float End, int Speaker)> rawSegments,
+            CancellationToken ct)
+        {
+            var identifiedIndices = new HashSet<int>();
+
+            // Step 1: Try voice fingerprint matching against stored profiles
+            if (_speakerProfileService.IsAvailable && _speakerProfileService.Profiles.Count > 0)
+            {
+                try
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        SpeakerPanelStatus.Text = "(matching voices against known speakers...)";
+                    });
+
+                    var speakerIndices = _diarizedTranscription!.GetSpeakerIndices();
+                    foreach (var idx in speakerIndices)
+                    {
+                        ct.ThrowIfCancellationRequested();
+
+                        // Get segments for this speaker
+                        var speakerSegs = rawSegments
+                            .Where(s => s.Speaker == idx)
+                            .Select(s => (s.Start, s.End))
+                            .ToArray();
+
+                        if (speakerSegs.Length == 0) continue;
+
+                        // Extract embedding from combined speaker audio
+                        var embedding = await _embeddingHelper.ExtractEmbeddingFromSegmentsAsync(
+                            fullSamples, 16000, speakerSegs);
+
+                        if (embedding.Length == 0) continue;
+
+                        // Match against stored profiles
+                        var (name, confidence) = _speakerProfileService.IdentifySpeaker(embedding);
+                        if (name != null)
+                        {
+                            identifiedIndices.Add(idx);
+                            _diarizedTranscription.SetSpeakerName(idx, name);
+
+                            Dispatcher.Invoke(() =>
+                            {
+                                var entry = _speakerEntries.FirstOrDefault(e => e.SpeakerIndex == idx);
+                                if (entry != null)
+                                {
+                                    entry.Name = name;
+                                    entry.ConfidenceBadge = $"voice match ({confidence:P0})";
+                                    entry.ConfidenceColor = confidence >= 0.8f ? Brushes.Green : Brushes.Orange;
+                                }
+                            });
+                        }
+                    }
+
+                    if (identifiedIndices.Count > 0)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            LiveTranscription = _diarizedTranscription!.ToFlatText();
+                            var attendees = _diarizedTranscription.GetNamedAttendees();
+                            if (!string.IsNullOrWhiteSpace(attendees))
+                                MeetingAttendees = attendees;
+                        });
+                    }
+                }
+                catch (OperationCanceledException) { throw; }
+                catch
+                {
+                    // Voice matching failed — continue to LLM inference
+                }
+            }
+
+            // Step 2: Run LLM inference for any speakers not yet identified by voice
+            await RunSpeakerNameInferenceAsync(ct, identifiedIndices);
+        }
+
+        private async Task RunSpeakerNameInferenceAsync(CancellationToken ct, HashSet<int>? skipIndices = null)
+        {
+            if (_diarizedTranscription == null || !_nameInferenceService.IsModelAvailable)
+                return;
+
+            try
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    SpeakerPanelStatus.Text = "(identifying speakers via AI...)";
+                });
+
+                var inferences = await _nameInferenceService.InferSpeakerNamesAsync(_diarizedTranscription, ct);
+
+                Dispatcher.Invoke(() =>
+                {
+                    int applied = 0;
+                    foreach (var inference in inferences)
+                    {
+                        // Skip speakers already identified by voice matching
+                        if (skipIndices != null && skipIndices.Contains(inference.SpeakerIndex))
+                            continue;
+
+                        // Apply to the data model
+                        _diarizedTranscription.SetSpeakerName(inference.SpeakerIndex, inference.InferredName);
+
+                        // Update the speaker panel entry
+                        var entry = _speakerEntries.FirstOrDefault(e => e.SpeakerIndex == inference.SpeakerIndex);
+                        if (entry != null)
+                        {
+                            entry.Name = inference.InferredName;
+
+                            if (inference.Confidence >= 0.9f)
+                            {
+                                entry.ConfidenceBadge = "AI: high confidence";
+                                entry.ConfidenceColor = Brushes.Green;
+                            }
+                            else if (inference.Confidence >= 0.8f)
+                            {
+                                entry.ConfidenceBadge = "AI: medium confidence";
+                                entry.ConfidenceColor = Brushes.Orange;
+                            }
+                            else
+                            {
+                                entry.ConfidenceBadge = "AI: low confidence";
+                                entry.ConfidenceColor = Brushes.Gray;
+                            }
+
+                            applied++;
+                        }
+                    }
+
+                    // Refresh transcript with inferred names
+                    LiveTranscription = _diarizedTranscription.ToFlatText();
+
+                    // Auto-populate attendees
+                    var attendees = _diarizedTranscription.GetNamedAttendees();
+                    if (!string.IsNullOrWhiteSpace(attendees))
+                        MeetingAttendees = attendees;
+
+                    var voiceMatched = skipIndices?.Count ?? 0;
+                    var total = _speakerEntries.Count;
+                    var totalIdentified = voiceMatched + applied;
+                    SpeakerPanelStatus.Text = totalIdentified > 0
+                        ? $"(identified {totalIdentified}/{total} speakers — edit to correct)"
+                        : $"({total} speakers detected — type names to identify)";
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                // Inference was cancelled — no update needed
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    SpeakerPanelStatus.Text = $"(AI inference failed: {ex.Message})";
+                });
+            }
+        }
+
+        private void PopulateSpeakerPanel()
+        {
+            if (_diarizedTranscription == null || _diarizedTranscription.SpeakerCount == 0)
+                return;
+
+            _speakerEntries.Clear();
+
+            var speakerIndices = _diarizedTranscription.GetSpeakerIndices();
+            foreach (var idx in speakerIndices)
+            {
+                var existingName = _diarizedTranscription.SpeakerNames.GetValueOrDefault(idx);
+                _speakerEntries.Add(new SpeakerEntry
+                {
+                    SpeakerIndex = idx,
+                    DefaultLabel = $"Speaker {idx + 1}",
+                    Name = existingName ?? ""
+                });
+            }
+
+            SpeakerItemsControl.ItemsSource = _speakerEntries;
+            SpeakerPanelBorder.Visibility = Visibility.Visible;
+            SpeakerPanelStatus.Text = $"({speakerIndices.Count} speakers detected — type names to identify)";
+        }
+
+        private void ApplySpeakerName(SpeakerEntry entry)
+        {
+            if (_diarizedTranscription == null) return;
+
+            var name = entry.Name?.Trim();
+            _diarizedTranscription.SetSpeakerName(entry.SpeakerIndex, name);
+
+            // Refresh transcript display
+            LiveTranscription = _diarizedTranscription.ToFlatText();
+
+            // Auto-populate attendees from named speakers
+            var attendees = _diarizedTranscription.GetNamedAttendees();
+            if (!string.IsNullOrWhiteSpace(attendees))
+            {
+                MeetingAttendees = attendees;
+            }
+
+            // Enroll speaker voice profile for future meeting identification
+            if (!string.IsNullOrWhiteSpace(name) && _lastFullAudioSamples != null && _lastDiarizationSegments != null)
+            {
+                _ = EnrollSpeakerAsync(entry.SpeakerIndex, name);
+            }
+        }
+
+        private async Task EnrollSpeakerAsync(int speakerIndex, string name)
+        {
+            if (!_embeddingHelper.IsModelAvailable || _lastFullAudioSamples == null || _lastDiarizationSegments == null)
+                return;
+
+            try
+            {
+                var speakerSegs = _lastDiarizationSegments
+                    .Where(s => s.Speaker == speakerIndex)
+                    .Select(s => (s.Start, s.End))
+                    .ToArray();
+
+                if (speakerSegs.Length == 0) return;
+
+                var embedding = await _embeddingHelper.ExtractEmbeddingFromSegmentsAsync(
+                    _lastFullAudioSamples, 16000, speakerSegs);
+
+                if (embedding.Length > 0)
+                {
+                    _speakerProfileService.EnrollWithEmbedding(name, embedding);
+                }
+            }
+            catch
+            {
+                // Best effort — don't block the user if enrollment fails
+            }
+        }
+
+        private void OnSpeakerNameChanged(object sender, RoutedEventArgs e)
+        {
+            if (sender is TextBox textBox && textBox.DataContext is SpeakerEntry entry)
+            {
+                ApplySpeakerName(entry);
+            }
+        }
+
+        private void OnSpeakerNameKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.Enter && sender is TextBox textBox && textBox.DataContext is SpeakerEntry entry)
+            {
+                ApplySpeakerName(entry);
+                // Move focus to next text box
+                textBox.MoveFocus(new System.Windows.Input.TraversalRequest(System.Windows.Input.FocusNavigationDirection.Next));
+            }
+        }
+
         protected override void OnClosed(EventArgs e)
         {
             _timer?.Stop();
@@ -725,6 +905,9 @@ IMPORTANT: Always create a summary based on the provided content, no matter how 
             _waveFileWriter?.Dispose();
             _audioStream?.Dispose();
             _diarizationService?.Dispose();
+            _nameInferenceService?.Dispose();
+            _speakerProfileService?.Dispose();
+            _embeddingHelper?.Dispose();
             base.OnClosed(e);
         }
 
@@ -930,16 +1113,46 @@ IMPORTANT: Always create a summary based on the provided content, no matter how 
                     return;
                 }
 
-                var speakerCount = segments.Max(s => s.Speaker) + 1;
+                // Load full audio once for all subsequent operations (post-merge, transcription, fingerprinting)
+                var fullSamples = AudioHelper.LoadWavAsFloats(convertedWavPath);
+                _lastFullAudioSamples = fullSamples;
+
+                // Post-processing: merge over-segmented speakers by embedding similarity
+                if (settings.EnablePostMerge && segments.Count > 0)
+                {
+                    var uniqueBefore = segments.Select(s => s.Speaker).Distinct().Count();
+
+                    if (uniqueBefore > 1)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            DiarizationStatus = $"Analyzing {uniqueBefore} speaker embeddings for merging...";
+                        });
+
+                        segments = await SherpaOnnxDiarizationService.MergeSimilarSpeakersAsync(
+                            segments, fullSamples, settings.PostMergeThreshold);
+
+                        var uniqueAfter = segments.Select(s => s.Speaker).Distinct().Count();
+
+                        if (uniqueAfter < uniqueBefore)
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                DiarizationStatus = $"Merged {uniqueBefore} → {uniqueAfter} speakers";
+                            });
+                        }
+                    }
+                }
+
+                _lastDiarizationSegments = segments;
+
+                var speakerCount = segments.Select(s => s.Speaker).Distinct().Count();
                 Dispatcher.Invoke(() =>
                 {
                     DetectedSpeakerCount = speakerCount;
                     DiarizationStatus = $"Found {speakerCount} speaker{(speakerCount != 1 ? "s" : "")}. Transcribing segments...";
                     DiarizationProgress = 100;
                 });
-
-                // Step 2: Load full audio once as float[], then transcribe each segment via sub-array
-                var fullSamples = AudioHelper.LoadWavAsFloats(convertedWavPath);
                 var transcriptionSegments = new List<TranscriptionSegment>();
 
                 for (int i = 0; i < segments.Count; i++)
@@ -1000,7 +1213,15 @@ IMPORTANT: Always create a summary based on the provided content, no matter how 
                     TranscriptionStatusColor = Brushes.Green;
                     IsDiarizing = false;
                     DiarizationStatus = $"Complete: {speakerCount} speaker{(speakerCount != 1 ? "s" : "")}, {transcriptionSegments.Count} segments";
+
+                    // Show speaker identification panel
+                    PopulateSpeakerPanel();
                 });
+
+                // Run speaker identification pipeline (non-blocking):
+                // 1. Voice fingerprint matching against stored profiles
+                // 2. LLM-based name inference for remaining unknown speakers
+                _ = RunSpeakerIdentificationPipelineAsync(fullSamples, segments, token);
             }
             catch (OperationCanceledException)
             {
@@ -1162,5 +1383,47 @@ IMPORTANT: Always create a summary based on the provided content, no matter how 
         public string Text { get; set; }
         public string Assignee { get; set; }
         public bool IsCompleted { get; set; }
+    }
+
+    public class SpeakerEntry : INotifyPropertyChanged
+    {
+        private string _name = "";
+        private string _confidenceBadge = "";
+        private Brush _confidenceColor = Brushes.Transparent;
+
+        public int SpeakerIndex { get; set; }
+        public string DefaultLabel { get; set; } = "";
+
+        public string Name
+        {
+            get => _name;
+            set
+            {
+                _name = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Name)));
+            }
+        }
+
+        public string ConfidenceBadge
+        {
+            get => _confidenceBadge;
+            set
+            {
+                _confidenceBadge = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ConfidenceBadge)));
+            }
+        }
+
+        public Brush ConfidenceColor
+        {
+            get => _confidenceColor;
+            set
+            {
+                _confidenceColor = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ConfidenceColor)));
+            }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
     }
 }

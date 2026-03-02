@@ -292,7 +292,7 @@
                                                Margin="0,0,8,0"/>
                                     <ComboBox x:Name="NotionWorkspaceComboBox"
                                               Width="250"
-                                              DisplayMemberPath="WorkspaceName"
+                                              DisplayMemberPath="DisplayName"
                                               SelectionChanged="OnNotionWorkspaceSelectionChanged"/>
                                     <TextBlock Text="Database:"
                                                FontSize="12"

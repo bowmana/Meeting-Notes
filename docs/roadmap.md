@@ -63,7 +63,45 @@
 
 ---
 
-### v0.3 — Call Detection
+### v0.3 — Multi-Provider Integration Architecture + Settings Overhaul
+
+**Goal:** Transform the app from Notion-only to a multi-provider integration platform with a modern, zero-friction Settings UI.
+
+#### Settings Window Redesign
+- Replace scrollable single-page Settings with **sidebar navigation** (4 pages: Integrations, Speech & Audio, AI, General)
+- Sidebar styling: 180px fixed width, `PrimaryBrush` active accent, hover states
+- Combine Speaker Diarization + ASR into single "Speech & Audio" page
+- Combine Call Detection + Preferences into single "General" page
+
+#### Integration Data Models
+- Create `Models/` directory with `Integration` abstract base class
+- `IntegrationProviderType` enum (Notion, GoogleDrive, OneDrive, Confluence, Slack, CsvExport, ExcelExport, MarkdownExport, PdfExport, Webhook)
+- `NotionIntegration : Integration` (replaces `NotionWorkspaceIntegration`)
+- `CsvExportIntegration`, `ExcelExportIntegration` (for future use)
+- `SerializableIntegration` (replaces `SerializableWorkspace`, with `ProviderType` discriminator)
+- Auto-migration from `workspaces.json` to `integrations.json`
+
+#### Provider Picker UI
+- "**+ Add Integration**" button opens a provider selection card grid
+- 10 providers across 2 categories: Cloud Services (Notion, Google Drive, OneDrive, Confluence, Slack) + Local Exports (CSV, Excel, Markdown, PDF, Webhook)
+- Notion is the only functional provider; all others show "Coming soon" badge (dimmed, not clickable)
+- Provider-specific configuration forms with "< Back" navigation
+- Integration list with provider badges, display name, target description, and status
+
+#### Save Service Extraction
+- Create `Services/` directory with `IMeetingSaveService` interface + `MeetingData` DTO
+- Extract inline Notion API save logic from `NoteTakingWindow` into `NotionSaveService`
+- `CsvSaveService`, `ExcelSaveService` stubs for future providers
+
+#### MainWindow + NoteTakingWindow Updates
+- Replace database dropdown with integration selector dropdown
+- Dynamic save button text based on selected integration provider
+- Update empty state: "Get Started" with "Add Integration" button
+- Dynamic status text based on integration provider type
+
+---
+
+### v0.4 — Call Detection
 
 - Process monitoring for active calls (Teams, Zoom, Meet, Discord)
 - System audio state detection (is audio actively playing?)
@@ -73,7 +111,7 @@
 
 ---
 
-### v0.4 — System Tray + Background Operation
+### v0.5 — System Tray + Background Operation
 
 - System tray icon with status indicator
 - Run in background, minimize to tray
@@ -83,7 +121,7 @@
 
 ---
 
-### v0.5 — Enhanced Notion Integration
+### v0.6 — Enhanced Notion Integration
 
 - Notion database auto-creation (set up "Meetings" database if none exists)
 - Block-level content writing (instead of flat rich_text for transcription/summary)
@@ -93,11 +131,31 @@
 
 ---
 
-### v0.6 — Quality of Life
+### v0.7 — Local Export Providers
 
-- Auto-save during meetings (periodic Notion saves)
+- **CSV Export**: `CsvSaveService` implementation — one .csv file per meeting
+- **Excel Export**: `ExcelSaveService` via ClosedXML — single file or per-meeting mode
+- **Markdown Export**: `MarkdownSaveService` — structured .md file with headings
+- **PDF Export**: `PdfSaveService` via QuestPDF or itext7 — formatted document
+- Remove "Coming soon" badges from implemented providers
+- File browser dialogs for export path configuration
+
+---
+
+### v0.8 — Cloud Integrations
+
+- **Google Drive**: OAuth2 flow, save as Google Docs
+- **OneDrive/SharePoint**: Microsoft Graph API, save to document libraries
+- **Confluence**: Atlassian API, save as wiki pages
+- **Slack**: Slack Web API, post summaries to channels
+- **Webhook**: HTTP POST with configurable endpoint + headers
+
+---
+
+### v0.9 — Quality of Life
+
+- Auto-save during meetings (periodic saves to active provider)
 - Meeting templates with pre-filled key points and action item categories
-- Export options beyond Notion (Markdown, plain text)
 - Keyboard shortcuts for common actions (start/stop recording, save)
 - Improved UI polish and responsive layout
 
@@ -122,3 +180,4 @@
 - Meeting analytics (frequency, duration trends)
 - Collaborative notes (share meeting link)
 - MVVM architecture refactor
+- Additional integrations: Airtable, Google Sheets, Email, Microsoft Teams channels

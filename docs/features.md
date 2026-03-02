@@ -16,10 +16,12 @@ The primary interface. Shows monitoring status, database selection, test functio
 
 ### Start a Meeting Section
 Two-state design with progressive disclosure:
-- **Not Connected state** (no workspaces/databases configured): Shows "Connect to Notion" prompt with plain-language explanation and a "Connect Notion" button that opens Settings directly
-- **Connected state** (databases available): Shows green connection indicator with workspace name, "Save notes to:" database dropdown, and "Start Meeting" button
-- Validation error shown inline (red text) if user clicks "Start Meeting" without selecting a database
-- Error clears automatically when user selects a database
+- **Not Connected state** (no integrations configured): Shows "Get Started" prompt with subtitle "Choose where to save your meeting notes — Notion, CSV, Excel, and more." and an "Add Integration" button that opens Settings → Integrations page
+- **Connected state** (integrations available): Shows connection indicator with integration info, "Save notes to:" integration selector dropdown (each item shows `[Provider Badge] Display Name — Target`), and "Start Meeting" button
+- Integration selector dropdown items display provider badge, display name, and target description (e.g., `[N] Work Notion — Sprint Planning DB`)
+- Status text is dynamic based on selected integration provider (e.g., "Connected to Notion", "CSV export ready")
+- Validation error shown inline (red text) if user clicks "Start Meeting" without selecting an integration
+- Error clears automatically when user selects an integration
 
 ### Test Functions Section
 - "Simulate Call Detection" — sets status to Recording
@@ -109,12 +111,22 @@ Speaker 1 [0:32 - 0:48]: Great. First item on the agenda...
 
 ### Bottom Actions
 - "Stop Recording" — stops transcription timer and audio capture
-- "Save to Notion" — creates a new page in the selected Notion database with all fields
+- **Dynamic save button** — text changes based on the active integration provider:
+  - Notion: "Save to Notion"
+  - CSV: "Export to CSV"
+  - Excel: "Export to Excel"
+  - Markdown: "Export to Markdown"
+  - PDF: "Export to PDF"
+  - Google Drive: "Save to Google Drive"
+  - Generic: "Save Notes"
 - "Generate Summary" — triggers AI summarization via configured provider (Private Mode or API Key Mode)
 
-### Notion Save Properties
-| Notion Property | Source |
-|----------------|--------|
+### Save Output Fields
+
+All integration providers receive the same meeting data. How it's stored depends on the provider:
+
+| Field | Description |
+|-------|-------------|
 | Title | Meeting Title field |
 | Transcription | Live Transcription text (speaker-labeled when diarization available) |
 | Speakers | Number of speakers detected (e.g., "3 speakers detected") |
@@ -127,46 +139,94 @@ Speaker 1 [0:32 - 0:48]: Great. First item on the agenda...
 | Attendees | Attendees field |
 | Date | Meeting start time (ISO 8601) |
 
----
-
-## Meeting Setup Window (`MeetingSetupWindow.xaml`)
-
-Optional pre-meeting configuration (currently bypassed — main window goes directly to NoteTakingWindow).
-
-### Workspace Selection
-- Dropdown to choose which Notion workspace to save notes to
-- Populated from configured workspace integrations
-
-### Meeting Information Form
-- Date picker
-- Title text input
-- Organizer text input
-- Attendees text input (comma-separated)
-- Comments text area
-
-### Actions
-- "Cancel" — closes window
-- "Start Taking Notes" — validates workspace + title, creates MeetingInfo, opens NoteTakingWindow
+**Provider-specific mapping:**
+- **Notion**: Saves as structured properties (Title, Rich Text, Date) on a Notion database page
+- **CSV**: Each field becomes a column in the CSV file
+- **Excel**: Each field becomes a column in the spreadsheet
+- **Markdown**: Structured headings and sections in a .md file
+- **PDF**: Formatted document with sections
+- **Google Drive / OneDrive / Confluence**: Provider-specific document format
 
 ---
 
 ## Settings Window (`SettingsWindow.xaml`)
 
-Configuration hub for all integrations and preferences.
+Configuration hub for all integrations and preferences. Uses a **sidebar navigation** layout with 4 pages.
 
-### Notion Workspace Integrations
-- "Add Workspace" button — shows the add/edit form
-- Workspace list showing: name, ID, selected database, connection status
-- Per-workspace actions: Edit, Test, Delete
-- Add/Edit form:
-  - Workspace display name
-  - Notion API key (PasswordBox)
-  - "Fetch Databases" button — queries Notion API, populates database dropdown (filtered to names containing "Meetings")
-  - Database dropdown for selecting target database
-  - Save / Cancel buttons
-- Workspaces persist to `%AppData%/MeetingNotesApp/workspaces.json`
+### Settings Layout: Sidebar Navigation
+The Settings window uses a sidebar + content panel layout (similar to VS Code/Discord/Slack settings):
+- **Sidebar** (left, ~180px): 4 navigation items — Integrations, Speech & Audio, AI, General
+- **Content panel** (right): Shows the selected page's controls
+- Active sidebar item has a `PrimaryBrush` left border accent + lighter background
+- "Close" button at bottom-right
 
-### AI Settings
+### Page 1: Integrations
+
+#### Integration List
+- "**+ Add Integration**" button — opens the provider picker
+- Integration list showing all configured integrations:
+  - Provider badge (colored circle with abbreviation: "N" for Notion, "G" for Google Drive, etc.)
+  - Integration display name (e.g., "Work Notion")
+  - Provider name + target in secondary text (e.g., "Notion · Sprint Planning DB")
+  - Status indicator (green dot + "Connected" for cloud, green + "Ready" for local exports)
+  - Edit / Delete action buttons (Test button only for cloud providers)
+- Integrations persist to `%AppData%/MeetingNotesApp/integrations.json`
+
+#### Provider Picker (shown when "Add Integration" clicked)
+A card grid with available integration providers, grouped by category:
+
+**Cloud Services:**
+| Provider | Badge Color | Status | Description |
+|----------|-------------|--------|-------------|
+| Notion | Black (#000) | **Functional** | Save to a Notion database with structured properties |
+| Google Drive | Blue (#4285F4) | Coming soon | Save meeting notes as Google Docs in Drive |
+| OneDrive/SharePoint | Blue (#0078D4) | Coming soon | Save to OneDrive or SharePoint document libraries |
+| Confluence | Blue (#0052CC) | Coming soon | Save to Atlassian Confluence wiki pages |
+| Slack | Purple (#4A154B) | Coming soon | Post meeting summaries to Slack channels |
+
+**Local Exports:**
+| Provider | Badge Color | Status | Description |
+|----------|-------------|--------|-------------|
+| CSV | Gray | Coming soon | Export meeting notes as .csv files |
+| Excel | Green (#217346) | Coming soon | Export meeting notes as .xlsx spreadsheets |
+| Markdown | Gray | Coming soon | Export as .md files (great for Obsidian, wikis) |
+| PDF | Red (#FF0000) | Coming soon | Export as formatted .pdf documents |
+| Webhook | Gray | Coming soon | Send meeting data to any custom API endpoint |
+
+- Cards: ~150x120px, `SurfaceElevatedBrush` background, 10px corner radius
+- Available cards: clickable with `PrimaryBrush` hover border glow
+- "Coming soon" cards: `Opacity="0.5"`, not clickable, `WarningBrush` pill badge
+- Cancel button returns to integration list
+
+#### Notion Configuration Form (shown after clicking Notion card)
+- "< Back" link to return to provider picker
+- Quick Setup Guide (same 3-step Notion setup guide, shown only on "Add", hidden on "Edit")
+- Display Name text field
+- Notion API Key (PasswordBox)
+- "Fetch Databases" button — queries Notion API, populates database dropdown
+- Target Database dropdown
+- "Save Integration" / "Cancel" buttons
+
+#### CSV Export Configuration Form (future)
+- Display Name, Export Folder path with Browse button
+
+#### Excel Export Configuration Form (future)
+- Display Name, Export Mode (one file per meeting / append to single file), Export path with Browse button
+
+### Page 2: Speech & Audio
+Combines the current Speaker Diarization and Speech Recognition sections:
+
+#### Speaker Diarization
+- Active segmentation model selector (ComboBox)
+- Model list with per-model download/delete buttons, progress bars
+- Embedding model download/delete
+- Advanced settings: number of speakers, clustering threshold
+
+#### Speech Recognition (ASR)
+- Active ASR model selector (ComboBox)
+- Model list with per-model download/delete buttons, progress bars
+
+### Page 3: AI
 
 #### AI Mode Toggle
 - **Private Mode (Local)** — default, all AI processing on-device via LLamaSharp
@@ -176,25 +236,27 @@ Configuration hub for all integrations and preferences.
 - Model status: "Downloaded" / "Not downloaded" / "Downloading... X%"
 - "Download Model" button (downloads Phi-4-mini Q4_K_M, 2.49 GB, from Hugging Face)
 - Download progress bar with cancel button
-- GPU detection status: "NVIDIA GPU detected — using GPU acceleration" or "No GPU detected — using CPU (summaries may take 15-30 seconds)"
-- "Test Local AI" button — runs a short test inference, shows success/failure dialog
-- Performance note: "Private Mode keeps all data on your device. Summaries take ~15-30s on CPU, ~3s with GPU."
+- GPU detection status
+- "Test Local AI" button
+- Performance note
 
 #### API Key Mode Section (shown when API Key Mode selected)
-- Privacy disclosure banner: "In API Key Mode, your meeting transcript text (not audio) is sent to the selected cloud provider for summarization. Audio always stays on your device."
+- Privacy disclosure banner
 - Provider dropdown: OpenAI, Anthropic, Custom Endpoint
 - API key input (PasswordBox)
-- Model name field (e.g., "gpt-4o-mini", "claude-haiku-4-5")
+- Model name field
 - Custom endpoint URL field (shown only when "Custom Endpoint" selected)
-- "Test Cloud AI" button — sends test prompt to configured endpoint, shows success/failure dialog
-- Performance note: "API Key Mode sends transcript text to the cloud. Summaries are faster and higher quality, but data leaves your device."
+- "Test Cloud AI" button
+- Performance note
 
-### Call Detection Settings
+### Page 4: General
+
+#### Call Detection Settings
 - Master toggle: Enable/disable automatic call detection
 - Per-app toggles: Microsoft Teams, Zoom, Google Meet, Discord
 - Each shows enabled state and monitoring status
 
-### General Settings
+#### Preferences
 - Start minimized to system tray (checkbox)
 - Automatically save notes during meetings (checkbox)
 - Show desktop notifications for call detection (checkbox)

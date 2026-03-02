@@ -147,7 +147,7 @@ namespace MeetingNotesApp
         /// cleaner, longer segments for transcription.
         /// </summary>
         internal static List<(float Start, float End, int Speaker)> MergeAdjacentSegments(
-            List<(float Start, float End, int Speaker)> segments, float gapThreshold = 0.5f)
+            List<(float Start, float End, int Speaker)> segments, float gapThreshold = 1.0f)
         {
             if (segments.Count <= 1)
                 return segments;
@@ -173,6 +173,114 @@ namespace MeetingNotesApp
 
             merged.Add(current);
             return merged;
+        }
+
+        /// <summary>
+        /// Post-processing pass: extracts per-speaker embeddings and merges speakers
+        /// whose voice embeddings are too similar to be distinct people.
+        /// Fixes over-segmentation where one person is split into 2+ speaker IDs.
+        /// </summary>
+        internal static async Task<List<(float Start, float End, int Speaker)>> MergeSimilarSpeakersAsync(
+            List<(float Start, float End, int Speaker)> segments,
+            float[] fullAudioSamples,
+            float similarityThreshold = 0.75f)
+        {
+            if (segments.Count == 0)
+                return segments;
+
+            var speakerIndices = segments.Select(s => s.Speaker).Distinct().OrderBy(i => i).ToList();
+
+            if (speakerIndices.Count <= 1)
+                return segments;
+
+            // Extract per-speaker embeddings using the same CampPlus model used for diarization
+            using var embeddingHelper = new SpeakerEmbeddingHelper();
+
+            if (!embeddingHelper.IsModelAvailable)
+                return segments;
+
+            var speakerEmbeddings = new Dictionary<int, float[]>();
+
+            foreach (var idx in speakerIndices)
+            {
+                var speakerSegs = segments
+                    .Where(s => s.Speaker == idx)
+                    .Select(s => (s.Start, s.End))
+                    .ToArray();
+
+                if (speakerSegs.Length == 0) continue;
+
+                var embedding = await embeddingHelper.ExtractEmbeddingFromSegmentsAsync(
+                    fullAudioSamples, 16000, speakerSegs, maxSeconds: 30f);
+
+                if (embedding.Length > 0)
+                    speakerEmbeddings[idx] = embedding;
+            }
+
+            if (speakerEmbeddings.Count <= 1)
+                return segments;
+
+            // Build merge map: greedily merge speakers with similar embeddings
+            var mergeMap = speakerIndices.ToDictionary(i => i, i => i);
+            var embeddedSpeakers = speakerEmbeddings.Keys.OrderBy(k => k).ToList();
+
+            for (int i = 0; i < embeddedSpeakers.Count; i++)
+            {
+                for (int j = i + 1; j < embeddedSpeakers.Count; j++)
+                {
+                    var a = embeddedSpeakers[i];
+                    var b = embeddedSpeakers[j];
+
+                    var canonicalA = ResolveCanonical(mergeMap, a);
+                    var canonicalB = ResolveCanonical(mergeMap, b);
+
+                    if (canonicalA == canonicalB)
+                        continue;
+
+                    var similarity = CosineSimilarity(speakerEmbeddings[a], speakerEmbeddings[b]);
+
+                    if (similarity >= similarityThreshold)
+                    {
+                        var target = Math.Min(canonicalA, canonicalB);
+                        var source = Math.Max(canonicalA, canonicalB);
+                        mergeMap[source] = target;
+                    }
+                }
+            }
+
+            // Check if any merges happened
+            if (mergeMap.All(kvp => kvp.Key == kvp.Value))
+                return segments;
+
+            // Remap all segment speaker indices and re-merge adjacent segments
+            var remapped = segments
+                .Select(s => (s.Start, s.End, Speaker: ResolveCanonical(mergeMap, s.Speaker)))
+                .ToList();
+
+            return MergeAdjacentSegments(remapped);
+        }
+
+        private static int ResolveCanonical(Dictionary<int, int> mergeMap, int speaker)
+        {
+            while (mergeMap[speaker] != speaker)
+                speaker = mergeMap[speaker];
+            return speaker;
+        }
+
+        private static float CosineSimilarity(float[] a, float[] b)
+        {
+            if (a.Length != b.Length || a.Length == 0) return 0f;
+
+            float dot = 0f, normA = 0f, normB = 0f;
+            for (int i = 0; i < a.Length; i++)
+            {
+                dot += a[i] * b[i];
+                normA += a[i] * a[i];
+                normB += b[i] * b[i];
+            }
+
+            if (normA == 0f || normB == 0f) return 0f;
+            return dot / (MathF.Sqrt(normA) * MathF.Sqrt(normB));
         }
 
         public void Dispose()

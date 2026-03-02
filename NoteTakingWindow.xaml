@@ -71,7 +71,7 @@
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="Attendees:" FontWeight="Bold" Margin="0,0,10,5"/>
                             <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding MeetingAttendees}" Margin="0,0,0,5" FontSize="14" Padding="8,4"/>
 
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Database:" FontWeight="Bold" Margin="0,0,10,5"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Destination:" FontWeight="Bold" Margin="0,0,10,5"/>
                             <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding DatabaseInfo}" Margin="0,0,0,5"/>
 
                             <TextBlock Grid.Row="4" Grid.Column="0" Text="Started:" FontWeight="Bold" Margin="0,0,10,5"/>
@@ -128,6 +128,59 @@
                                          Background="{DynamicResource Gray300Brush}"/>
                         </StackPanel>
 
+                        <!-- Speaker Identification Panel (visible after diarization) -->
+                        <Border x:Name="SpeakerPanelBorder"
+                                Background="{DynamicResource BackgroundBrush}"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,10"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Speaker Identification"
+                                               FontSize="13"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="SpeakerPanelStatus"
+                                               Text=""
+                                               FontSize="11"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               Margin="10,0,0,0"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <ItemsControl x:Name="SpeakerItemsControl">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                <TextBlock Text="{Binding DefaultLabel}"
+                                                           FontSize="12"
+                                                           Width="80"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Text="→"
+                                                           FontSize="12"
+                                                           Margin="5,0,8,0"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                         Width="180"
+                                                         FontSize="12"
+                                                         Padding="6,3"
+                                                         Tag="{Binding SpeakerIndex}"
+                                                         LostFocus="OnSpeakerNameChanged"
+                                                         KeyDown="OnSpeakerNameKeyDown"/>
+                                                <TextBlock Text="{Binding ConfidenceBadge}"
+                                                           FontSize="10"
+                                                           Margin="8,0,0,0"
+                                                           Foreground="{Binding ConfidenceColor}"
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
                         <ScrollViewer Height="150">
                             <TextBlock Text="{Binding LiveTranscription}"
                                        FontSize="14"
@@ -147,7 +200,7 @@
                                    FontWeight="Bold" 
                                    Margin="0,0,0,5"/>
                         
-                        <TextBlock Text="Add your own notes alongside the transcription. These will be saved to a separate field in Notion." 
+                        <TextBlock Text="Add your own notes alongside the transcription. These will be saved as a separate field."
                                    FontSize="12" 
                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                    FontStyle="Italic"
@@ -277,10 +330,10 @@
                         Click="OnStopRecordingClicked" 
                         Padding="15,8"
                         Margin="0,0,15,0"/>
-                <Button Content="Save to Notion" 
-                        Background="{DynamicResource PrimaryBrush}" 
+                <Button Content="{Binding SaveButtonText}"
+                        Background="{DynamicResource PrimaryBrush}"
                         Foreground="White"
-                        Click="OnSaveToNotionClicked" 
+                        Click="OnSaveClicked"
                         Padding="15,8"
                         Margin="0,0,15,0"/>
                 <Button Content="Generate Summary" 

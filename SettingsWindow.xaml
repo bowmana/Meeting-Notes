@@ -16,126 +16,542 @@
         <Border Grid.Row="0" Background="{DynamicResource PrimaryBrush}" Padding="20,15">
             <StackPanel Orientation="Horizontal">
                 <Ellipse Width="12" Height="12" Fill="{DynamicResource WhiteBrush}" Margin="0,0,15,0"/>
-                <TextBlock Text="Settings" 
-                           Foreground="{DynamicResource WhiteBrush}" 
-                           FontSize="24" 
-                           FontWeight="Bold" 
+                <TextBlock Text="Settings"
+                           Foreground="{DynamicResource WhiteBrush}"
+                           FontSize="24"
+                           FontWeight="Bold"
                            VerticalAlignment="Center"/>
-                <TextBlock Text="Manage integrations and preferences" 
-                           Foreground="{DynamicResource AccentBrush}" 
-                           FontSize="14" 
+                <TextBlock Text="Manage integrations and preferences"
+                           Foreground="{DynamicResource AccentBrush}"
+                           FontSize="14"
                            Margin="20,0,0,0"
                            VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
 
-        <!-- Main Content -->
-        <ScrollViewer Grid.Row="1" Padding="20">
-            <StackPanel>
+        <!-- Main Content: Sidebar + Content Area -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
 
-                <!-- Notion Workspace Integrations -->
-                <Border Background="{DynamicResource SurfaceBrush}" 
-                        CornerRadius="10" 
-                        Padding="15"
-                        Margin="0,0,0,20">
+            <!-- Sidebar -->
+            <Border Grid.Column="0" Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource Gray300Brush}" BorderThickness="0,0,1,0">
+                <StackPanel Margin="0,10,0,0">
+                    <Button Tag="Integrations" Content="Integrations"
+                            Style="{StaticResource SidebarButtonStyle}"
+                            Click="OnSidebarItemClicked"/>
+                    <Button Tag="SpeechAudio" Content="Speech &amp; Audio"
+                            Style="{StaticResource SidebarButtonStyle}"
+                            Click="OnSidebarItemClicked"/>
+                    <Button Tag="AI" Content="AI"
+                            Style="{StaticResource SidebarButtonStyle}"
+                            Click="OnSidebarItemClicked"/>
+                    <Button Tag="General" Content="General"
+                            Style="{StaticResource SidebarButtonStyle}"
+                            Click="OnSidebarItemClicked"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Content Area -->
+            <ScrollViewer Grid.Column="1" Padding="20">
+                <Grid>
+
+                    <!-- Page: Integrations -->
                     <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
-                            <TextBlock Text="Notion Workspace Integrations" 
-                                       FontSize="18" 
-                                       FontWeight="Bold" 
-                                       Margin="0,0,10,0"/>
-                            <Button Content="Add Workspace" 
-                                    Click="OnAddWorkspaceClicked" 
-                                    Padding="15,8"
-                                    Background="{DynamicResource SuccessBrush}"/>
-                        </StackPanel>
-                        
-                        <TextBlock Text="Manage your Notion workspace integrations. Each workspace requires its own API key." 
-                                   FontSize="12" 
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   Margin="0,0,0,15"/>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedSettingsPage}" Value="Integrations">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
 
-                        <!-- Workspace List -->
-                        <ListBox x:Name="WorkspaceListBox" 
-                                 Height="300" 
-                                 Margin="0,0,0,15"
-                                 HorizontalContentAlignment="Stretch">
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                    <Setter Property="Padding" Value="0"/>
-                                    <Setter Property="Margin" Value="0,0,0,10"/>
+                        <!-- STATE 1: Integration List (default) -->
+                        <Border Background="{DynamicResource SurfaceBrush}"
+                                CornerRadius="10"
+                                Padding="15"
+                                Margin="0,0,0,20">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsListVisible}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
                                 </Style>
-                            </ListBox.ItemContainerStyle>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{DynamicResource LightBrush}" 
-                                            CornerRadius="8" 
-                                            Padding="15">
+                            </Border.Style>
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                                    <TextBlock Text="Integrations"
+                                               FontSize="18"
+                                               FontWeight="Bold"
+                                               Margin="0,0,10,0"/>
+                                    <Button Content="+ Add Integration"
+                                            Click="OnAddWorkspaceClicked"
+                                            Padding="15,8"
+                                            Background="{DynamicResource SuccessBrush}"/>
+                                </StackPanel>
+
+                                <TextBlock Text="Manage where your meeting notes are saved."
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Margin="0,0,0,15"/>
+
+                                <!-- Integration List -->
+                                <ListBox x:Name="WorkspaceListBox"
+                                         Height="300"
+                                         Margin="0,0,0,15"
+                                         HorizontalContentAlignment="Stretch">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0,0,0,10"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource LightBrush}"
+                                                    CornerRadius="8"
+                                                    Padding="15">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                                        <!-- Provider Badge -->
+                                                        <Border Width="32" Height="32" CornerRadius="6"
+                                                                Background="#000000" Margin="0,0,12,0"
+                                                                VerticalAlignment="Center">
+                                                            <TextBlock Text="N" Foreground="White"
+                                                                       FontSize="14" FontWeight="Bold"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayName}"
+                                                                       FontSize="16"
+                                                                       FontWeight="Bold"
+                                                                       Margin="0,0,0,3"/>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="{Binding ProviderDisplayName}"
+                                                                           FontSize="12"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                                                <TextBlock Text=" · "
+                                                                           FontSize="12"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                                                <TextBlock Text="{Binding TargetDescription}"
+                                                                           FontSize="12"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                                            </StackPanel>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                                                <Ellipse Width="8" Height="8"
+                                                                        Fill="{Binding StatusColor}"
+                                                                        Margin="0,0,6,0"
+                                                                        VerticalAlignment="Center"/>
+                                                                <TextBlock Text="{Binding StatusText}"
+                                                                           FontSize="11"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Button Content="Edit"
+                                                                Click="OnEditWorkspaceClicked"
+                                                                Tag="{Binding}"
+                                                                Padding="12,6"
+                                                                Margin="0,0,5,0"
+                                                                FontSize="12"
+                                                                MinWidth="50"
+                                                                Background="{DynamicResource InfoBrush}"/>
+                                                        <Button Content="Delete"
+                                                                Click="OnDeleteWorkspaceClicked"
+                                                                Tag="{Binding}"
+                                                                Padding="12,6"
+                                                                FontSize="12"
+                                                                MinWidth="60"
+                                                                Background="{DynamicResource ErrorBrush}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- STATE 2: Provider Picker -->
+                        <Border Background="{DynamicResource SurfaceBrush}"
+                                CornerRadius="10"
+                                Padding="20"
+                                Margin="0,0,0,20">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPickerVisible}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel>
+                                <TextBlock Text="Add Integration"
+                                           FontSize="20"
+                                           FontWeight="Bold"
+                                           Margin="0,0,0,5"/>
+                                <TextBlock Text="Where do you want to save your meeting notes?"
+                                           FontSize="13"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Margin="0,0,0,20"/>
+
+                                <!-- Cloud Services -->
+                                <TextBlock Text="CLOUD SERVICES"
+                                           FontSize="11"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Margin="0,0,0,10"/>
+                                <WrapPanel Margin="0,0,0,20">
+                                    <!-- Notion (functional) -->
+                                    <Button Tag="Notion" Click="OnProviderCardClicked"
+                                            Margin="0,0,10,10" Padding="0" Cursor="Hand"
+                                            Background="Transparent" BorderThickness="0">
+                                        <Border Width="150" Height="120"
+                                                Background="{DynamicResource SurfaceElevatedBrush}"
+                                                CornerRadius="10" Padding="12"
+                                                BorderBrush="Transparent" BorderThickness="2">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <StackPanel>
+                                                <Border Width="28" Height="28" CornerRadius="6"
+                                                        Background="#000000" Margin="0,0,0,8"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="N" Foreground="White"
+                                                               FontSize="13" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Notion" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           Margin="0,0,0,3"/>
+                                                <TextBlock Text="Save to a Notion database"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </Button>
+                                    <!-- Google Drive (coming soon) -->
+                                    <Border Width="150" Height="120" Opacity="0.5"
+                                            Background="{DynamicResource SurfaceElevatedBrush}"
+                                            CornerRadius="10" Padding="12" Margin="0,0,10,10">
                                         <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            
-                                            <StackPanel Grid.Column="0">
-                                                <TextBlock Text="{Binding WorkspaceName}" 
-                                                           FontSize="16" 
-                                                           FontWeight="Bold"
-                                                           Margin="0,0,0,5"/>
-                                                <TextBlock Text="{Binding WorkspaceId}" 
-                                                           FontSize="12" 
-                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                           Margin="0,0,0,5"/>
-                                                <TextBlock Text="{Binding SelectedDatabase.Name}" 
-                                                           FontSize="12" 
-                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                           Margin="0,0,0,5"/>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Ellipse Width="8" Height="8" 
-                                                            Fill="{Binding StatusColor}" 
-                                                            Margin="0,0,8,0"/>
-                                                    <TextBlock Text="{Binding StatusText}" 
-                                                               FontSize="12" 
-                                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                                </StackPanel>
+                                            <StackPanel>
+                                                <Border Width="28" Height="28" CornerRadius="6"
+                                                        Background="#4285F4" Margin="0,0,0,8"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="G" Foreground="White"
+                                                               FontSize="13" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Google Drive" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           Margin="0,0,0,3"/>
+                                                <TextBlock Text="Save as Google Docs"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
                                             </StackPanel>
-                                            
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Button Content="Edit" 
-                                                        Click="OnEditWorkspaceClicked" 
-                                                        Tag="{Binding}"
-                                                        Padding="12,6"
-                                                        Margin="0,0,5,0"
-                                                        FontSize="12"
-                                                        MinWidth="50"
-                                                        Background="{DynamicResource InfoBrush}"/>
-                                                <Button Content="Test" 
-                                                        Click="OnTestWorkspaceClicked" 
-                                                        Tag="{Binding}"
-                                                        Padding="12,6"
-                                                        Margin="0,0,5,0"
-                                                        FontSize="12"
-                                                        MinWidth="50"
-                                                        Background="{DynamicResource PrimaryBrush}"/>
-                                                <Button Content="Delete" 
-                                                        Click="OnDeleteWorkspaceClicked" 
-                                                        Tag="{Binding}"
-                                                        Padding="12,6"
-                                                        FontSize="12"
-                                                        MinWidth="60"
-                                                        Background="{DynamicResource ErrorBrush}"/>
-                                            </StackPanel>
+                                            <Border Background="{DynamicResource WarningBrush}"
+                                                    CornerRadius="8" Padding="6,2"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,-2,-2,0">
+                                                <TextBlock Text="Soon" FontSize="9" FontWeight="Bold"
+                                                           Foreground="White"/>
+                                            </Border>
                                         </Grid>
                                     </Border>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                                    <!-- OneDrive (coming soon) -->
+                                    <Border Width="150" Height="120" Opacity="0.5"
+                                            Background="{DynamicResource SurfaceElevatedBrush}"
+                                            CornerRadius="10" Padding="12" Margin="0,0,10,10">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Width="28" Height="28" CornerRadius="6"
+                                                        Background="#0078D4" Margin="0,0,0,8"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="O" Foreground="White"
+                                                               FontSize="13" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="OneDrive" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           Margin="0,0,0,3"/>
+                                                <TextBlock Text="Save to OneDrive or SharePoint"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <Border Background="{DynamicResource WarningBrush}"
+                                                    CornerRadius="8" Padding="6,2"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,-2,-2,0">
+                                                <TextBlock Text="Soon" FontSize="9" FontWeight="Bold"
+                                                           Foreground="White"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                    <!-- Confluence (coming soon) -->
+                                    <Border Width="150" Height="120" Opacity="0.5"
+                                            Background="{DynamicResource SurfaceElevatedBrush}"
+                                            CornerRadius="10" Padding="12" Margin="0,0,10,10">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Width="28" Height="28" CornerRadius="6"
+                                                        Background="#0052CC" Margin="0,0,0,8"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="C" Foreground="White"
+                                                               FontSize="13" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Confluence" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           Margin="0,0,0,3"/>
+                                                <TextBlock Text="Save to Confluence wiki"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <Border Background="{DynamicResource WarningBrush}"
+                                                    CornerRadius="8" Padding="6,2"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,-2,-2,0">
+                                                <TextBlock Text="Soon" FontSize="9" FontWeight="Bold"
+                                                           Foreground="White"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                    <!-- Slack (coming soon) -->
+                                    <Border Width="150" Height="120" Opacity="0.5"
+                                            Background="{DynamicResource SurfaceElevatedBrush}"
+                                            CornerRadius="10" Padding="12" Margin="0,0,10,10">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Width="28" Height="28" CornerRadius="6"
+                                                        Background="#4A154B" Margin="0,0,0,8"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="S" Foreground="White"
+                                                               FontSize="13" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Slack" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           Margin="0,0,0,3"/>
+                                                <TextBlock Text="Post summaries to channels"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <Border Background="{DynamicResource WarningBrush}"
+                                                    CornerRadius="8" Padding="6,2"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,-2,-2,0">
+                                                <TextBlock Text="Soon" FontSize="9" FontWeight="Bold"
+                                                           Foreground="White"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </WrapPanel>
 
-                        <!-- Add/Edit Workspace Form -->
-                        <Border Background="{DynamicResource LightBrush}" 
-                                CornerRadius="8" 
-                                Padding="15">
+                                <!-- Local Exports -->
+                                <TextBlock Text="LOCAL EXPORTS"
+                                           FontSize="11"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Margin="0,0,0,10"/>
+                                <WrapPanel Margin="0,0,0,20">
+                                    <!-- CSV (coming soon) -->
+                                    <Border Width="150" Height="120" Opacity="0.5"
+                                            Background="{DynamicResource SurfaceElevatedBrush}"
+                                            CornerRadius="10" Padding="12" Margin="0,0,10,10">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Width="28" Height="28" CornerRadius="6"
+                                                        Background="{DynamicResource Gray600Brush}" Margin="0,0,0,8"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="CSV" Foreground="White"
+                                                               FontSize="9" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="CSV" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           Margin="0,0,0,3"/>
+                                                <TextBlock Text="Export as .csv files"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <Border Background="{DynamicResource WarningBrush}"
+                                                    CornerRadius="8" Padding="6,2"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,-2,-2,0">
+                                                <TextBlock Text="Soon" FontSize="9" FontWeight="Bold"
+                                                           Foreground="White"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                    <!-- Excel (coming soon) -->
+                                    <Border Width="150" Height="120" Opacity="0.5"
+                                            Background="{DynamicResource SurfaceElevatedBrush}"
+                                            CornerRadius="10" Padding="12" Margin="0,0,10,10">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Width="28" Height="28" CornerRadius="6"
+                                                        Background="#217346" Margin="0,0,0,8"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="XLS" Foreground="White"
+                                                               FontSize="9" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Excel" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           Margin="0,0,0,3"/>
+                                                <TextBlock Text="Export as .xlsx spreadsheets"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <Border Background="{DynamicResource WarningBrush}"
+                                                    CornerRadius="8" Padding="6,2"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,-2,-2,0">
+                                                <TextBlock Text="Soon" FontSize="9" FontWeight="Bold"
+                                                           Foreground="White"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                    <!-- Markdown (coming soon) -->
+                                    <Border Width="150" Height="120" Opacity="0.5"
+                                            Background="{DynamicResource SurfaceElevatedBrush}"
+                                            CornerRadius="10" Padding="12" Margin="0,0,10,10">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Width="28" Height="28" CornerRadius="6"
+                                                        Background="{DynamicResource Gray600Brush}" Margin="0,0,0,8"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="MD" Foreground="White"
+                                                               FontSize="9" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Markdown" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           Margin="0,0,0,3"/>
+                                                <TextBlock Text="Export as .md files"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <Border Background="{DynamicResource WarningBrush}"
+                                                    CornerRadius="8" Padding="6,2"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,-2,-2,0">
+                                                <TextBlock Text="Soon" FontSize="9" FontWeight="Bold"
+                                                           Foreground="White"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                    <!-- PDF (coming soon) -->
+                                    <Border Width="150" Height="120" Opacity="0.5"
+                                            Background="{DynamicResource SurfaceElevatedBrush}"
+                                            CornerRadius="10" Padding="12" Margin="0,0,10,10">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Width="28" Height="28" CornerRadius="6"
+                                                        Background="#FF0000" Margin="0,0,0,8"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="PDF" Foreground="White"
+                                                               FontSize="9" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="PDF" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           Margin="0,0,0,3"/>
+                                                <TextBlock Text="Export as .pdf documents"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <Border Background="{DynamicResource WarningBrush}"
+                                                    CornerRadius="8" Padding="6,2"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,-2,-2,0">
+                                                <TextBlock Text="Soon" FontSize="9" FontWeight="Bold"
+                                                           Foreground="White"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                    <!-- Webhook (coming soon) -->
+                                    <Border Width="150" Height="120" Opacity="0.5"
+                                            Background="{DynamicResource SurfaceElevatedBrush}"
+                                            CornerRadius="10" Padding="12" Margin="0,0,10,10">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Width="28" Height="28" CornerRadius="6"
+                                                        Background="{DynamicResource Gray600Brush}" Margin="0,0,0,8"
+                                                        HorizontalAlignment="Left">
+                                                    <TextBlock Text="{}{}" Foreground="White"
+                                                               FontSize="10" FontWeight="Bold"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBlock Text="Webhook" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           Margin="0,0,0,3"/>
+                                                <TextBlock Text="Send to custom API endpoint"
+                                                           FontSize="11" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <Border Background="{DynamicResource WarningBrush}"
+                                                    CornerRadius="8" Padding="6,2"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                    Margin="0,-2,-2,0">
+                                                <TextBlock Text="Soon" FontSize="9" FontWeight="Bold"
+                                                           Foreground="White"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </WrapPanel>
+
+                                <!-- Cancel button -->
+                                <Button Content="Cancel"
+                                        Click="OnPickerBackToList"
+                                        Padding="15,8"
+                                        HorizontalAlignment="Right"
+                                        Background="{DynamicResource Gray600Brush}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- STATE 3: Provider Configuration Form (Notion) -->
+                        <Border Background="{DynamicResource SurfaceBrush}"
+                                CornerRadius="10"
+                                Padding="20"
+                                Margin="0,0,0,20">
                             <Border.Style>
                                 <Style TargetType="Border">
                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -147,30 +563,49 @@
                                 </Style>
                             </Border.Style>
                             <StackPanel>
+                                <!-- Back navigation -->
+                                <Button Content="&lt; Back"
+                                        Click="OnFormBackToPicker"
+                                        Padding="0" Margin="0,0,0,10"
+                                        Background="Transparent" BorderThickness="0"
+                                        Foreground="{DynamicResource AccentBrush}"
+                                        FontSize="13" Cursor="Hand"
+                                        HorizontalAlignment="Left">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding FormTitle}" Value="Edit Integration">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+
                                 <TextBlock Text="{Binding FormTitle}"
-                                           FontSize="16"
+                                           FontSize="18"
                                            FontWeight="Bold"
                                            Margin="0,0,0,15"/>
 
                                 <!-- Quick Setup Guide (only shown when adding, not editing) -->
-                                <Border Background="{DynamicResource SurfaceBrush}"
+                                <Border Background="{DynamicResource LightBrush}"
                                         CornerRadius="6"
                                         Padding="12"
                                         Margin="0,0,0,15"
-                                        BorderBrush="#3A3A3A"
+                                        BorderBrush="{DynamicResource Gray300Brush}"
                                         BorderThickness="1">
                                     <Border.Style>
                                         <Style TargetType="Border">
                                             <Setter Property="Visibility" Value="Visible"/>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding FormTitle}" Value="Edit Workspace">
+                                                <DataTrigger Binding="{Binding FormTitle}" Value="Edit Integration">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Border.Style>
                                     <StackPanel>
-                                        <TextBlock Text="New to Notion integrations? Follow these steps:"
+                                        <TextBlock Text="Quick Setup Guide"
                                                    FontSize="13"
                                                    FontWeight="SemiBold"
                                                    Foreground="{DynamicResource TextPrimaryBrush}"
@@ -232,11 +667,11 @@
                                                            Foreground="{DynamicResource TextPrimaryBrush}"/>
                                             </StackPanel>
                                             <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"
-                                                       Text="Open your meetings database in Notion (web or desktop app), then:"/>
+                                                       Text="Open your meetings database in Notion, then:"/>
                                             <TextBlock Margin="10,2,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"
-                                                       Text="1. Click the &#x2022;&#x2022;&#x2022; menu in the top-right corner of the page"/>
+                                                       Text="1. Click the &#x2022;&#x2022;&#x2022; menu in the top-right corner"/>
                                             <TextBlock Margin="10,2,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"
-                                                       Text="2. Scroll down and click &quot;+ Add connections&quot;"/>
+                                                       Text="2. Click &quot;+ Add connections&quot;"/>
                                             <TextBlock Margin="10,2,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"
                                                        Text="3. Search for your integration name and select it"/>
                                             <TextBlock Margin="10,2,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"
@@ -246,11 +681,10 @@
                                                 <Hyperlink NavigateUri="https://www.notion.com/help/add-and-manage-connections-with-the-api"
                                                            RequestNavigate="OnNotionIntegrationLinkClicked"
                                                            Foreground="{DynamicResource AccentBrush}"
-                                                           TextDecorations="Underline">See Notion's guide with screenshots &#x2197;</Hyperlink>
+                                                           TextDecorations="Underline">Notion's guide &#x2197;</Hyperlink>
                                             </TextBlock>
                                         </StackPanel>
 
-                                        <!-- Already have one? -->
                                         <TextBlock FontSize="11" Margin="0,2,0,0" Foreground="{DynamicResource TextSecondaryBrush}">
                                             <Run Text="Already have an integration? "/>
                                             <Hyperlink NavigateUri="https://www.notion.so/profile/integrations"
@@ -261,11 +695,11 @@
                                     </StackPanel>
                                 </Border>
 
-                                <TextBlock Text="Workspace Display Name"
+                                <TextBlock Text="Display Name"
                                            FontSize="14"
                                            FontWeight="Bold"
                                            Margin="0,0,0,2"/>
-                                <TextBlock Text="A friendly name for this workspace (e.g., 'Work' or 'Personal')"
+                                <TextBlock Text="A friendly name for this integration (e.g., 'Work Notion' or 'Personal')"
                                            FontSize="12"
                                            FontStyle="Italic"
                                            Foreground="{DynamicResource TextSecondaryBrush}"
@@ -274,7 +708,7 @@
                                          Text="{Binding EditingWorkspace.WorkspaceName}"
                                          Margin="0,0,0,15"
                                          ToolTip="This is the name you'll see when selecting where to save notes"/>
-                                
+
                                 <TextBlock Text="Notion API Key"
                                            FontSize="14"
                                            FontWeight="Bold"
@@ -297,15 +731,15 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <PasswordBox x:Name="ApiKeyBox" Grid.Column="0"/>
-                                    <Button Content="Fetch Databases" 
+                                    <Button Content="Fetch Databases"
                                             Grid.Column="2"
                                             Click="OnFetchDatabasesClicked"
                                             Padding="15,8"
                                             Background="{DynamicResource PrimaryBrush}"
                                             ToolTip="Click to retrieve databases from Notion"/>
                                 </Grid>
-                                
-                                <TextBlock Text="Meeting Notes Database"
+
+                                <TextBlock Text="Target Database"
                                            FontSize="14"
                                            FontWeight="Bold"
                                            Margin="0,0,0,2"/>
@@ -315,7 +749,7 @@
                                            Foreground="{DynamicResource TextSecondaryBrush}"
                                            TextWrapping="Wrap"
                                            Margin="0,0,0,5"/>
-                                <ComboBox x:Name="DatabaseComboBox" 
+                                <ComboBox x:Name="DatabaseComboBox"
                                           ItemsSource="{Binding AvailableDatabases}"
                                           SelectedItem="{Binding EditingWorkspace.SelectedDatabase}"
                                           Margin="0,0,0,15"
@@ -332,477 +766,534 @@
                                         </DataTemplate>
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
-                                
+
                                 <StackPanel Orientation="Horizontal">
-                                    <Button Content="Save" 
-                                            Click="OnSaveWorkspaceClicked" 
+                                    <Button Content="Save Integration"
+                                            Click="OnSaveWorkspaceClicked"
                                             Padding="15,8"
                                             Margin="0,0,10,0"
                                             Background="{DynamicResource SuccessBrush}"/>
-                                    <Button Content="Cancel" 
-                                            Click="OnCancelWorkspaceClicked" 
+                                    <Button Content="Cancel"
+                                            Click="OnCancelWorkspaceClicked"
                                             Padding="15,8"
                                             Background="{DynamicResource Gray600Brush}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+
                     </StackPanel>
-                </Border>
 
-                <!-- AI Settings -->
-                <Border Background="{DynamicResource SurfaceBrush}" 
-                        CornerRadius="10" 
-                        Padding="15"
-                        Margin="0,0,0,20">
+                    <!-- Page: Speech & Audio -->
                     <StackPanel>
-                        <TextBlock Text="AI Settings" 
-                                   FontSize="18" 
-                                   FontWeight="Bold" 
-                                   Margin="0,0,0,15"/>
-                        
-                        <TextBlock Text="Local LLM Integration (LMStudio)" 
-                                   FontSize="14" 
-                                   FontWeight="Bold" 
-                                   Margin="0,0,0,5"/>
-                        
-                        <TextBlock Text="This app uses LMStudio running locally for AI-powered meeting summaries. Make sure LMStudio is running on http://127.0.0.1:1234 with meta-llama-3.1-8b-instruct loaded." 
-                                   FontSize="12" 
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   FontStyle="Italic"
-                                   TextWrapping="Wrap"
-                                   Margin="0,0,0,10"/>
-                        
-                        <Button Content="Test LMStudio Connection" 
-                                Click="OnTestLMStudioClicked"
-                                Padding="15,8"
-                                Background="{DynamicResource SuccessBrush}"
-                                HorizontalAlignment="Left"/>
-                    </StackPanel>
-                </Border>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedSettingsPage}" Value="SpeechAudio">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
 
-                <!-- Speaker Diarization Settings -->
-                <Border Background="{DynamicResource SurfaceBrush}"
-                        CornerRadius="10"
-                        Padding="15"
-                        Margin="0,0,0,20">
-                    <StackPanel>
-                        <TextBlock Text="Speaker Diarization"
-                                   FontSize="18"
-                                   FontWeight="Bold"
-                                   Margin="0,0,0,5"/>
+                        <!-- Speaker Diarization Settings -->
+                        <Border Background="{DynamicResource SurfaceBrush}"
+                                CornerRadius="10"
+                                Padding="15"
+                                Margin="0,0,0,20">
+                            <StackPanel>
+                                <TextBlock Text="Speaker Diarization"
+                                           FontSize="18"
+                                           FontWeight="Bold"
+                                           Margin="0,0,0,5"/>
 
-                        <TextBlock Text="Speaker diarization identifies who said what during meetings. After recording stops, the audio is analyzed to label each speaker's contributions. All processing happens locally on your device."
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   TextWrapping="Wrap"
-                                   Margin="0,0,0,15"/>
-
-                        <!-- Active Segmentation Model Selector -->
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
-                            <TextBlock Text="Active Model:"
-                                       FontSize="14"
-                                       FontWeight="Bold"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,10,0"/>
-                            <ComboBox x:Name="ActiveDiarizationModelComboBox"
-                                      Width="280"
-                                      Height="32"
-                                      FontSize="13"
-                                      SelectionChanged="OnActiveDiarizationModelChanged"
-                                      ToolTip="Select which downloaded segmentation model to use for speaker diarization"/>
-                        </StackPanel>
-
-                        <!-- Segmentation Models List -->
-                        <TextBlock Text="Segmentation Models"
-                                   FontSize="14"
-                                   FontWeight="Bold"
-                                   Margin="0,0,0,8"/>
-
-                        <ItemsControl x:Name="DiarizationModelListControl">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{DynamicResource LightBrush}"
-                                            CornerRadius="6"
-                                            Padding="12"
-                                            Margin="0,0,0,6">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <StackPanel Grid.Column="0">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="{Binding DisplayName}"
-                                                               FontSize="14"
-                                                               FontWeight="SemiBold"
-                                                               Margin="0,0,10,0"/>
-                                                    <TextBlock Text="{Binding SizeText}"
-                                                               FontSize="12"
-                                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                                               VerticalAlignment="Center"
-                                                               Margin="0,0,10,0"/>
-                                                    <Ellipse Width="8" Height="8"
-                                                             Fill="{Binding StatusColor}"
-                                                             VerticalAlignment="Center"
-                                                             Margin="0,0,6,0"/>
-                                                    <TextBlock Text="{Binding StatusText}"
-                                                               FontSize="11"
-                                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                                               VerticalAlignment="Center"/>
-                                                </StackPanel>
-                                                <TextBlock Text="{Binding Description}"
-                                                           FontSize="12"
-                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                           Margin="0,3,0,0"/>
-                                            </StackPanel>
-
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                <Button Content="Download"
-                                                        Click="OnDownloadDiarizationSegModelClicked"
-                                                        Tag="{Binding ModelType}"
-                                                        Padding="12,6"
-                                                        FontSize="12"
-                                                        MinWidth="80"
-                                                        Background="{DynamicResource SuccessBrush}"
-                                                        Visibility="{Binding DownloadButtonVisibility}"/>
-                                                <Button Content="Delete"
-                                                        Click="OnDeleteDiarizationSegModelClicked"
-                                                        Tag="{Binding ModelType}"
-                                                        Padding="12,6"
-                                                        FontSize="12"
-                                                        MinWidth="80"
-                                                        Background="{DynamicResource ErrorBrush}"
-                                                        Visibility="{Binding DeleteButtonVisibility}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <!-- Segmentation Download Progress -->
-                        <StackPanel x:Name="DiarizationSegDownloadProgress" Visibility="Collapsed" Margin="0,8,0,0">
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                                <TextBlock x:Name="DiarizationSegDownloadStatusText"
-                                           Text="Downloading..."
+                                <TextBlock Text="Speaker diarization identifies who said what during meetings. After recording stops, the audio is analyzed to label each speaker's contributions. All processing happens locally on your device."
                                            FontSize="12"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                <Button x:Name="CancelDiarizationSegDownloadButton"
-                                        Content="Cancel"
-                                        Click="OnCancelDiarizationSegDownloadClicked"
-                                        Padding="8,2"
-                                        Margin="15,0,0,0"
-                                        FontSize="11"
-                                        Background="{DynamicResource Gray600Brush}"/>
-                            </StackPanel>
-                            <ProgressBar x:Name="DiarizationSegDownloadProgressBar"
-                                         Value="0" Minimum="0" Maximum="100" Height="6"
-                                         Foreground="{DynamicResource PrimaryBrush}"
-                                         Background="{DynamicResource Gray300Brush}"/>
-                        </StackPanel>
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,15"/>
 
-                        <!-- Speaker Embedding Model -->
-                        <TextBlock Text="Speaker Embedding Model"
-                                   FontSize="14"
-                                   FontWeight="Bold"
-                                   Margin="0,15,0,5"/>
+                                <!-- Active Segmentation Model Selector -->
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                                    <TextBlock Text="Active Model:"
+                                               FontSize="14"
+                                               FontWeight="Bold"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,10,0"/>
+                                    <ComboBox x:Name="ActiveDiarizationModelComboBox"
+                                              Width="280"
+                                              Height="32"
+                                              FontSize="13"
+                                              SelectionChanged="OnActiveDiarizationModelChanged"
+                                              ToolTip="Select which downloaded segmentation model to use for speaker diarization"/>
+                                </StackPanel>
 
-                        <TextBlock Text="Required for all diarization. Identifies unique speakers by voice characteristics."
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   TextWrapping="Wrap"
-                                   Margin="0,0,0,8"/>
+                                <!-- Segmentation Models List -->
+                                <TextBlock Text="Segmentation Models"
+                                           FontSize="14"
+                                           FontWeight="Bold"
+                                           Margin="0,0,0,8"/>
 
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                            <TextBlock Text="3D-Speaker CampPlus English (~28 MB)"
-                                       FontSize="13"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,10,0"/>
-                            <Ellipse x:Name="EmbeddingModelStatusDot" Width="8" Height="8" Fill="Gray" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="EmbeddingModelStatusText"
-                                       Text="Checking..."
-                                       FontSize="11"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                       VerticalAlignment="Center"/>
-                        </StackPanel>
+                                <ItemsControl x:Name="DiarizationModelListControl">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource LightBrush}"
+                                                    CornerRadius="6"
+                                                    Padding="12"
+                                                    Margin="0,0,0,6">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
 
-                        <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
-                            <Button x:Name="DownloadEmbeddingModelButton"
-                                    Content="Download"
-                                    Click="OnDownloadEmbeddingModelClicked"
-                                    Padding="12,6"
-                                    FontSize="12"
-                                    Margin="0,0,10,0"
-                                    Background="{DynamicResource SuccessBrush}"/>
-                            <Button x:Name="DeleteEmbeddingModelButton"
-                                    Content="Delete"
-                                    Click="OnDeleteEmbeddingModelClicked"
-                                    Padding="12,6"
-                                    FontSize="12"
-                                    Background="{DynamicResource ErrorBrush}"
-                                    Visibility="Collapsed"/>
-                        </StackPanel>
+                                                    <StackPanel Grid.Column="0">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding DisplayName}"
+                                                                       FontSize="14"
+                                                                       FontWeight="SemiBold"
+                                                                       Margin="0,0,10,0"/>
+                                                            <TextBlock Text="{Binding SizeText}"
+                                                                       FontSize="12"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="0,0,10,0"/>
+                                                            <Ellipse Width="8" Height="8"
+                                                                     Fill="{Binding StatusColor}"
+                                                                     VerticalAlignment="Center"
+                                                                     Margin="0,0,6,0"/>
+                                                            <TextBlock Text="{Binding StatusText}"
+                                                                       FontSize="11"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                       VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Description}"
+                                                                   FontSize="12"
+                                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                   Margin="0,3,0,0"/>
+                                                    </StackPanel>
 
-                        <!-- Embedding Download Progress -->
-                        <StackPanel x:Name="EmbeddingDownloadProgress" Visibility="Collapsed" Margin="0,0,0,10">
-                            <TextBlock x:Name="EmbeddingDownloadStatusText"
-                                       Text="Downloading..."
-                                       FontSize="12"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                       Margin="0,0,0,5"/>
-                            <ProgressBar x:Name="EmbeddingDownloadProgressBar"
-                                         Value="0" Minimum="0" Maximum="100" Height="6"
-                                         Foreground="{DynamicResource PrimaryBrush}"
-                                         Background="{DynamicResource Gray300Brush}"/>
-                        </StackPanel>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <Button Content="Download"
+                                                                Click="OnDownloadDiarizationSegModelClicked"
+                                                                Tag="{Binding ModelType}"
+                                                                Padding="12,6"
+                                                                FontSize="12"
+                                                                MinWidth="80"
+                                                                Background="{DynamicResource SuccessBrush}"
+                                                                Visibility="{Binding DownloadButtonVisibility}"/>
+                                                        <Button Content="Delete"
+                                                                Click="OnDeleteDiarizationSegModelClicked"
+                                                                Tag="{Binding ModelType}"
+                                                                Padding="12,6"
+                                                                FontSize="12"
+                                                                MinWidth="80"
+                                                                Background="{DynamicResource ErrorBrush}"
+                                                                Visibility="{Binding DeleteButtonVisibility}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
 
-                        <!-- Advanced Settings -->
-                        <TextBlock Text="Advanced Settings"
-                                   FontSize="14"
-                                   FontWeight="Bold"
-                                   Margin="0,10,0,5"/>
-
-                        <Grid Margin="0,0,0,5">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="180"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Number of Speakers:" VerticalAlignment="Center" FontSize="12"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <TextBox x:Name="DiarizationNumSpeakersBox"
-                                         Text="-1" Width="60" Padding="4,2"
-                                         ToolTip="-1 = auto-detect. Set to a positive number to force a specific speaker count."/>
-                                <TextBlock Text="(-1 = auto-detect)" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
-                                           VerticalAlignment="Center" Margin="10,0,0,0"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="180"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Clustering Threshold:" VerticalAlignment="Center" FontSize="12"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <TextBox x:Name="DiarizationThresholdBox"
-                                         Text="0.5" Width="60" Padding="4,2"
-                                         ToolTip="Lower = more speakers detected. Higher = fewer speakers. Range: 0.0 - 1.0"/>
-                                <TextBlock Text="(0.0 - 1.0, lower = more speakers)" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
-                                           VerticalAlignment="Center" Margin="10,0,0,0"/>
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
-                <!-- Speech Recognition (ASR) Settings -->
-                <Border Background="{DynamicResource SurfaceBrush}"
-                        CornerRadius="10"
-                        Padding="15"
-                        Margin="0,0,0,20">
-                    <StackPanel>
-                        <TextBlock Text="Speech Recognition"
-                                   FontSize="18"
-                                   FontWeight="Bold"
-                                   Margin="0,0,0,5"/>
-
-                        <TextBlock Text="Speech recognition converts meeting audio into text. Multiple models are available — larger models are more accurate but slower. All processing happens locally on your device."
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                   TextWrapping="Wrap"
-                                   Margin="0,0,0,15"/>
-
-                        <!-- Active Model Selector -->
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
-                            <TextBlock Text="Active Model:"
-                                       FontSize="14"
-                                       FontWeight="Bold"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,10,0"/>
-                            <ComboBox x:Name="ActiveASRModelComboBox"
-                                      Width="280"
-                                      Height="32"
-                                      FontSize="13"
-                                      SelectionChanged="OnActiveASRModelChanged"
-                                      ToolTip="Select which downloaded model to use for transcription"/>
-                        </StackPanel>
-
-                        <!-- Available Models List -->
-                        <TextBlock Text="Available Models"
-                                   FontSize="14"
-                                   FontWeight="Bold"
-                                   Margin="0,0,0,8"/>
-
-                        <ItemsControl x:Name="ASRModelListControl">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{DynamicResource LightBrush}"
-                                            CornerRadius="6"
-                                            Padding="12"
-                                            Margin="0,0,0,6">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <StackPanel Grid.Column="0">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="{Binding DisplayName}"
-                                                               FontSize="14"
-                                                               FontWeight="SemiBold"
-                                                               Margin="0,0,10,0"/>
-                                                    <TextBlock Text="{Binding SizeText}"
-                                                               FontSize="12"
-                                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                                               VerticalAlignment="Center"
-                                                               Margin="0,0,10,0"/>
-                                                    <Ellipse Width="8" Height="8"
-                                                             Fill="{Binding StatusColor}"
-                                                             VerticalAlignment="Center"
-                                                             Margin="0,0,6,0"/>
-                                                    <TextBlock Text="{Binding StatusText}"
-                                                               FontSize="11"
-                                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                                               VerticalAlignment="Center"/>
-                                                </StackPanel>
-                                                <TextBlock Text="{Binding Description}"
-                                                           FontSize="12"
-                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                           Margin="0,3,0,0"/>
-                                            </StackPanel>
-
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                <Button Content="Download"
-                                                        Click="OnDownloadASRModelClicked"
-                                                        Tag="{Binding ModelType}"
-                                                        Padding="12,6"
-                                                        FontSize="12"
-                                                        MinWidth="80"
-                                                        Background="{DynamicResource SuccessBrush}"
-                                                        Visibility="{Binding DownloadButtonVisibility}"/>
-                                                <Button Content="Delete"
-                                                        Click="OnDeleteASRModelClicked"
-                                                        Tag="{Binding ModelType}"
-                                                        Padding="12,6"
-                                                        FontSize="12"
-                                                        MinWidth="80"
-                                                        Background="{DynamicResource ErrorBrush}"
-                                                        Visibility="{Binding DeleteButtonVisibility}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <!-- Download Progress -->
-                        <StackPanel x:Name="ASRDownloadProgress" Visibility="Collapsed" Margin="0,8,0,0">
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                                <TextBlock x:Name="ASRDownloadStatusText"
-                                           Text="Downloading..."
-                                           FontSize="12"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                <Button x:Name="CancelASRDownloadButton"
-                                        Content="Cancel"
-                                        Click="OnCancelASRDownloadClicked"
-                                        Padding="8,2"
-                                        Margin="15,0,0,0"
-                                        FontSize="11"
-                                        Background="{DynamicResource Gray600Brush}"/>
-                            </StackPanel>
-                            <ProgressBar x:Name="ASRDownloadProgressBar"
-                                         Value="0" Minimum="0" Maximum="100" Height="6"
-                                         Foreground="{DynamicResource PrimaryBrush}"
-                                         Background="{DynamicResource Gray300Brush}"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- Call Detection Settings -->
-                <Border Background="{DynamicResource SurfaceBrush}" 
-                        CornerRadius="10" 
-                        Padding="15"
-                        Margin="0,0,0,20">
-                    <StackPanel>
-                        <TextBlock Text="Call Detection Settings" 
-                                   FontSize="18" 
-                                   FontWeight="Bold" 
-                                   Margin="0,0,0,15"/>
-                        
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <CheckBox x:Name="CallDetectionCheckBox" 
-                                      IsChecked="{Binding IsCallDetectionEnabled}"
-                                      Checked="OnCallDetectionChanged"
-                                      Unchecked="OnCallDetectionChanged"
-                                      Margin="0,0,10,0"/>
-                            <TextBlock Text="Enable automatic call detection" VerticalAlignment="Center"/>
-                        </StackPanel>
-                        
-                        <TextBlock Text="Detected Apps:" FontSize="14" FontWeight="Bold" Margin="0,10,0,5"/>
-                        
-                        <ListBox x:Name="DetectedAppsListBox" Height="120">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal">
-                                        <CheckBox IsChecked="{Binding IsEnabled}" Margin="0,0,10,0"/>
-                                        <TextBlock Text="{Binding AppName}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                        <TextBlock Text="{Binding Status}" 
-                                                   FontSize="12" 
-                                                   Foreground="{DynamicResource TextSecondaryBrush}" 
-                                                   VerticalAlignment="Center"/>
+                                <!-- Segmentation Download Progress -->
+                                <StackPanel x:Name="DiarizationSegDownloadProgress" Visibility="Collapsed" Margin="0,8,0,0">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                        <TextBlock x:Name="DiarizationSegDownloadStatusText"
+                                                   Text="Downloading..."
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        <Button x:Name="CancelDiarizationSegDownloadButton"
+                                                Content="Cancel"
+                                                Click="OnCancelDiarizationSegDownloadClicked"
+                                                Padding="8,2"
+                                                Margin="15,0,0,0"
+                                                FontSize="11"
+                                                Background="{DynamicResource Gray600Brush}"/>
                                     </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </StackPanel>
-                </Border>
+                                    <ProgressBar x:Name="DiarizationSegDownloadProgressBar"
+                                                 Value="0" Minimum="0" Maximum="100" Height="6"
+                                                 Foreground="{DynamicResource PrimaryBrush}"
+                                                 Background="{DynamicResource Gray300Brush}"/>
+                                </StackPanel>
 
-                <!-- General Settings -->
-                <Border Background="{DynamicResource SurfaceBrush}" 
-                        CornerRadius="10" 
-                        Padding="15">
+                                <!-- Speaker Embedding Model -->
+                                <TextBlock Text="Speaker Embedding Model"
+                                           FontSize="14"
+                                           FontWeight="Bold"
+                                           Margin="0,15,0,5"/>
+
+                                <TextBlock Text="Required for all diarization. Identifies unique speakers by voice characteristics."
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,8"/>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                    <TextBlock Text="3D-Speaker CampPlus English (~28 MB)"
+                                               FontSize="13"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,10,0"/>
+                                    <Ellipse x:Name="EmbeddingModelStatusDot" Width="8" Height="8" Fill="Gray" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="EmbeddingModelStatusText"
+                                               Text="Checking..."
+                                               FontSize="11"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                                    <Button x:Name="DownloadEmbeddingModelButton"
+                                            Content="Download"
+                                            Click="OnDownloadEmbeddingModelClicked"
+                                            Padding="12,6"
+                                            FontSize="12"
+                                            Margin="0,0,10,0"
+                                            Background="{DynamicResource SuccessBrush}"/>
+                                    <Button x:Name="DeleteEmbeddingModelButton"
+                                            Content="Delete"
+                                            Click="OnDeleteEmbeddingModelClicked"
+                                            Padding="12,6"
+                                            FontSize="12"
+                                            Background="{DynamicResource ErrorBrush}"
+                                            Visibility="Collapsed"/>
+                                </StackPanel>
+
+                                <!-- Embedding Download Progress -->
+                                <StackPanel x:Name="EmbeddingDownloadProgress" Visibility="Collapsed" Margin="0,0,0,10">
+                                    <TextBlock x:Name="EmbeddingDownloadStatusText"
+                                               Text="Downloading..."
+                                               FontSize="12"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               Margin="0,0,0,5"/>
+                                    <ProgressBar x:Name="EmbeddingDownloadProgressBar"
+                                                 Value="0" Minimum="0" Maximum="100" Height="6"
+                                                 Foreground="{DynamicResource PrimaryBrush}"
+                                                 Background="{DynamicResource Gray300Brush}"/>
+                                </StackPanel>
+
+                                <!-- Advanced Settings -->
+                                <TextBlock Text="Advanced Settings"
+                                           FontSize="14"
+                                           FontWeight="Bold"
+                                           Margin="0,10,0,5"/>
+
+                                <Grid Margin="0,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Number of Speakers:" VerticalAlignment="Center" FontSize="12"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <TextBox x:Name="DiarizationNumSpeakersBox"
+                                                 Text="-1" Width="60" Padding="4,2"
+                                                 ToolTip="-1 = auto-detect. Set to a positive number to force a specific speaker count."/>
+                                        <TextBlock Text="(-1 = auto-detect)" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Clustering Threshold:" VerticalAlignment="Center" FontSize="12"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <TextBox x:Name="DiarizationThresholdBox"
+                                                 Text="0.85" Width="60" Padding="4,2"
+                                                 ToolTip="Higher = fewer speakers detected (more merging). Range: 0.0 - 1.0. Recommended: 0.80-0.90 for small meetings."/>
+                                        <TextBlock Text="(0.0 - 1.0, higher = fewer speakers, recommended: 0.85)" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Post-Merge Settings -->
+                                <Grid Margin="0,10,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Post-Merge Speakers:" VerticalAlignment="Center" FontSize="12"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <CheckBox x:Name="DiarizationPostMergeCheckBox"
+                                                  IsChecked="True"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip="After diarization, compare speaker voice embeddings and merge speakers that sound the same. Fixes over-segmentation."/>
+                                        <TextBlock Text="(merge similar-sounding speakers after diarization)" FontSize="11"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Merge Threshold:" VerticalAlignment="Center" FontSize="12"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <TextBox x:Name="DiarizationPostMergeThresholdBox"
+                                                 Text="0.75" Width="60" Padding="4,2"
+                                                 ToolTip="Cosine similarity threshold for merging speakers. Lower = more aggressive merging. Range: 0.5 - 1.0. Recommended: 0.70-0.80"/>
+                                        <TextBlock Text="(0.5 - 1.0, lower = more aggressive merging)" FontSize="11"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Speech Recognition (ASR) Settings -->
+                        <Border Background="{DynamicResource SurfaceBrush}"
+                                CornerRadius="10"
+                                Padding="15"
+                                Margin="0,0,0,20">
+                            <StackPanel>
+                                <TextBlock Text="Speech Recognition"
+                                           FontSize="18"
+                                           FontWeight="Bold"
+                                           Margin="0,0,0,5"/>
+
+                                <TextBlock Text="Speech recognition converts meeting audio into text. Multiple models are available — larger models are more accurate but slower. All processing happens locally on your device."
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,15"/>
+
+                                <!-- Active Model Selector -->
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                                    <TextBlock Text="Active Model:"
+                                               FontSize="14"
+                                               FontWeight="Bold"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,10,0"/>
+                                    <ComboBox x:Name="ActiveASRModelComboBox"
+                                              Width="280"
+                                              Height="32"
+                                              FontSize="13"
+                                              SelectionChanged="OnActiveASRModelChanged"
+                                              ToolTip="Select which downloaded model to use for transcription"/>
+                                </StackPanel>
+
+                                <!-- Available Models List -->
+                                <TextBlock Text="Available Models"
+                                           FontSize="14"
+                                           FontWeight="Bold"
+                                           Margin="0,0,0,8"/>
+
+                                <ItemsControl x:Name="ASRModelListControl">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource LightBrush}"
+                                                    CornerRadius="6"
+                                                    Padding="12"
+                                                    Margin="0,0,0,6">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <StackPanel Grid.Column="0">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding DisplayName}"
+                                                                       FontSize="14"
+                                                                       FontWeight="SemiBold"
+                                                                       Margin="0,0,10,0"/>
+                                                            <TextBlock Text="{Binding SizeText}"
+                                                                       FontSize="12"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="0,0,10,0"/>
+                                                            <Ellipse Width="8" Height="8"
+                                                                     Fill="{Binding StatusColor}"
+                                                                     VerticalAlignment="Center"
+                                                                     Margin="0,0,6,0"/>
+                                                            <TextBlock Text="{Binding StatusText}"
+                                                                       FontSize="11"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                       VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Description}"
+                                                                   FontSize="12"
+                                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                   Margin="0,3,0,0"/>
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <Button Content="Download"
+                                                                Click="OnDownloadASRModelClicked"
+                                                                Tag="{Binding ModelType}"
+                                                                Padding="12,6"
+                                                                FontSize="12"
+                                                                MinWidth="80"
+                                                                Background="{DynamicResource SuccessBrush}"
+                                                                Visibility="{Binding DownloadButtonVisibility}"/>
+                                                        <Button Content="Delete"
+                                                                Click="OnDeleteASRModelClicked"
+                                                                Tag="{Binding ModelType}"
+                                                                Padding="12,6"
+                                                                FontSize="12"
+                                                                MinWidth="80"
+                                                                Background="{DynamicResource ErrorBrush}"
+                                                                Visibility="{Binding DeleteButtonVisibility}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Download Progress -->
+                                <StackPanel x:Name="ASRDownloadProgress" Visibility="Collapsed" Margin="0,8,0,0">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                        <TextBlock x:Name="ASRDownloadStatusText"
+                                                   Text="Downloading..."
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        <Button x:Name="CancelASRDownloadButton"
+                                                Content="Cancel"
+                                                Click="OnCancelASRDownloadClicked"
+                                                Padding="8,2"
+                                                Margin="15,0,0,0"
+                                                FontSize="11"
+                                                Background="{DynamicResource Gray600Brush}"/>
+                                    </StackPanel>
+                                    <ProgressBar x:Name="ASRDownloadProgressBar"
+                                                 Value="0" Minimum="0" Maximum="100" Height="6"
+                                                 Foreground="{DynamicResource PrimaryBrush}"
+                                                 Background="{DynamicResource Gray300Brush}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+
+                    <!-- Page: AI -->
                     <StackPanel>
-                        <TextBlock Text="General Settings" 
-                                   FontSize="18" 
-                                   FontWeight="Bold" 
-                                   Margin="0,0,0,15"/>
-                        
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <CheckBox x:Name="StartMinimizedCheckBox" 
-                                      IsChecked="{Binding StartMinimized}"
-                                      Margin="0,0,10,0"/>
-                            <TextBlock Text="Start minimized to system tray" VerticalAlignment="Center"/>
-                        </StackPanel>
-                        
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <CheckBox x:Name="AutoSaveCheckBox" 
-                                      IsChecked="{Binding AutoSaveNotes}"
-                                      Margin="0,0,10,0"/>
-                            <TextBlock Text="Automatically save notes during meetings" VerticalAlignment="Center"/>
-                        </StackPanel>
-                        
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <CheckBox x:Name="ShowNotificationsCheckBox" 
-                                      IsChecked="{Binding ShowNotifications}"
-                                      Margin="0,0,10,0"/>
-                            <TextBlock Text="Show desktop notifications for call detection" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedSettingsPage}" Value="AI">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
 
-            </StackPanel>
-        </ScrollViewer>
+                        <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="10" Padding="15">
+                            <StackPanel>
+                                <TextBlock Text="AI Settings" FontSize="18" FontWeight="Bold" Margin="0,0,0,5"/>
+                                <TextBlock Text="AI summarization settings will be available here once the AI provider architecture is implemented."
+                                           FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+
+                    <!-- Page: General -->
+                    <StackPanel>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedSettingsPage}" Value="General">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+
+                        <!-- Call Detection Settings -->
+                        <Border Background="{DynamicResource SurfaceBrush}"
+                                CornerRadius="10"
+                                Padding="15"
+                                Margin="0,0,0,20">
+                            <StackPanel>
+                                <TextBlock Text="Call Detection Settings"
+                                           FontSize="18"
+                                           FontWeight="Bold"
+                                           Margin="0,0,0,15"/>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <CheckBox x:Name="CallDetectionCheckBox"
+                                              IsChecked="{Binding IsCallDetectionEnabled}"
+                                              Checked="OnCallDetectionChanged"
+                                              Unchecked="OnCallDetectionChanged"
+                                              Margin="0,0,10,0"/>
+                                    <TextBlock Text="Enable automatic call detection" VerticalAlignment="Center"/>
+                                </StackPanel>
+
+                                <TextBlock Text="Detected Apps:" FontSize="14" FontWeight="Bold" Margin="0,10,0,5"/>
+
+                                <ListBox x:Name="DetectedAppsListBox" Height="120">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <CheckBox IsChecked="{Binding IsEnabled}" Margin="0,0,10,0"/>
+                                                <TextBlock Text="{Binding AppName}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                                <TextBlock Text="{Binding Status}"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- General Settings -->
+                        <Border Background="{DynamicResource SurfaceBrush}"
+                                CornerRadius="10"
+                                Padding="15">
+                            <StackPanel>
+                                <TextBlock Text="General Settings"
+                                           FontSize="18"
+                                           FontWeight="Bold"
+                                           Margin="0,0,0,15"/>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <CheckBox x:Name="StartMinimizedCheckBox"
+                                              IsChecked="{Binding StartMinimized}"
+                                              Margin="0,0,10,0"/>
+                                    <TextBlock Text="Start minimized to system tray" VerticalAlignment="Center"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <CheckBox x:Name="AutoSaveCheckBox"
+                                              IsChecked="{Binding AutoSaveNotes}"
+                                              Margin="0,0,10,0"/>
+                                    <TextBlock Text="Automatically save notes during meetings" VerticalAlignment="Center"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <CheckBox x:Name="ShowNotificationsCheckBox"
+                                              IsChecked="{Binding ShowNotifications}"
+                                              Margin="0,0,10,0"/>
+                                    <TextBlock Text="Show desktop notifications for call detection" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+
+                </Grid>
+            </ScrollViewer>
+        </Grid>
 
         <!-- Bottom Actions -->
-        <Border Grid.Row="2" 
-                Background="{DynamicResource SurfaceBrush}" 
+        <Border Grid.Row="2"
+                Background="{DynamicResource SurfaceBrush}"
                 Padding="20,15">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Close" 
-                        Background="{DynamicResource Gray600Brush}" 
+                <Button Content="Close"
+                        Background="{DynamicResource Gray600Brush}"
                         Foreground="White"
-                        Click="OnCloseClicked" 
+                        Click="OnCloseClicked"
                         Padding="15,8"/>
             </StackPanel>
         </Border>

@@ -1,10 +1,10 @@
-# Meeting Notes App — AI-Powered Meeting Note-Taker with Notion Integration
+# Meeting Notes App — AI-Powered Meeting Note-Taker with Multi-Provider Integration
 
 ## Overview
 
-A Windows desktop app that captures meeting audio, transcribes it in real-time, generates AI summaries, and saves structured notes to Notion. Built with .NET 8 + WPF, using NAudio for system audio capture, Windows Speech Recognition for transcription, and LLamaSharp (in-process local LLM) or a user-provided cloud API key for AI-powered summaries.
+A Windows desktop app that captures meeting audio, transcribes it in real-time, generates AI summaries, and saves structured notes to multiple destinations — Notion, Google Drive, Excel, CSV, and more. Built with .NET 8 + WPF, using NAudio for system audio capture, sherpa-onnx for transcription + speaker diarization, and LLamaSharp (in-process local LLM) or a user-provided cloud API key for AI-powered summaries.
 
-**Core Philosophy**: Capture everything, organize automatically, save to where you already work (Notion).
+**Core Philosophy**: Capture everything, organize automatically, save to where you already work.
 
 ---
 
@@ -27,11 +27,12 @@ A Windows desktop app that captures meeting audio, transcribes it in real-time, 
 - **NO FALLBACK LOGIC, NO LEGACY CODE, NO DEPRECATED CODE.** If code, a feature, or an approach is no longer the current plan, REMOVE IT COMPLETELY. Do not keep old implementations "just in case" or wrap them behind flags. Do not add fallback paths that silently degrade to a worse experience. If the current approach fails, show a clear error message — do not silently fall back to a different approach. When plans change (e.g., LMStudio → LLamaSharp), DELETE the old code entirely and replace it with the new approach. This applies to all code, services, UI elements, and documentation references.
 - **ALWAYS CHECK TO SEE IF CODE/METHOD/CLASS/HELPERS/etc. ALREADY EXISTS BEFORE WRITING IT. USE @/docs/folder_filestructure.md TO FIND THE FILES AND FOLDERS.**
 - Be careful with audio/speech resources — always dispose NAudio captures, speech engines, and streams properly
-- Notion API calls should always handle rate limits, auth failures, and network errors gracefully
+- Cloud API calls (Notion, Google Drive, etc.) should always handle rate limits, auth failures, and network errors gracefully
 
 ### Product
 - **Privacy-first**: All transcription happens locally. AI summarization defaults to local (Private Mode via LLamaSharp). Optional cloud API mode (API Key Mode) requires explicit user opt-in with their own API key.
-- **Notion is the source of truth**: Notes are saved to the user's own Notion workspace — we don't store meeting data locally beyond the session
+- **User's destination is the source of truth**: Notes are saved to the user's chosen integration provider (Notion, Google Drive, local files, etc.) — we don't store meeting data locally beyond the session
+- **Multi-provider integrations**: Notion (functional), with coming-soon support for Google Drive, OneDrive, Confluence, Slack, CSV, Excel, Markdown, PDF, and Webhook. Each provider has its own `Integration` subclass and `IMeetingSaveService` implementation.
 - **Two AI modes**: Private Mode (LLamaSharp, local, default) and API Key Mode (cloud provider, opt-in). No other AI backends.
 
 ---
@@ -62,16 +63,20 @@ READ **ALL** of these docs at the start of every conversation, and update them a
 
 | Scenario | Decision |
 |----------|----------|
-| No Notion API key configured | Disable database selection, show setup prompt in Settings |
+| No integrations configured | Show "Get Started" in MainWindow with "Add Integration" button → opens Settings Integrations page |
+| No Notion API key configured | Disable database fetch in Notion configuration form, show validation error |
+| "Coming soon" provider clicked | Card is dimmed and not clickable. No action taken. |
 | Private Mode: model not downloaded | Show clear message in AI Summary area: "AI model not downloaded. Go to Settings → AI Settings to download." Disable Generate Summary button. |
 | Private Mode: inference fails | Show error with details in AI Summary area. Do not fall back to text truncation or any other approach. |
 | API Key Mode: API call fails | Show error with HTTP status and provider details. Do not fall back to local inference or text truncation. |
 | No system audio detected | Show clear status message, suggest checking audio output device |
 | Speech recognition produces no results | Display "No speech detected" status, don't append empty text |
 | Notion API rate limit hit | Retry with backoff, show progress to user |
-| Meeting note save fails | Show error with details, keep note window open so user doesn't lose work |
+| Meeting note save fails (any provider) | Show error with details, keep note window open so user doesn't lose work |
 | No databases found with "Meetings" filter | Show all databases, or prompt user to create one |
 | Long meeting transcription exceeds Notion rich_text limit (2000 chars) | Split into multiple blocks or truncate with warning |
+| CSV/Excel export path invalid or not writable | Show clear error with path details, don't silently skip |
+| Migration from workspaces.json | Auto-migrate to integrations.json on first load, keep old file as backup |
 
 ---
 

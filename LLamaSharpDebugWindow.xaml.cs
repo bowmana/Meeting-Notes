@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using MeetingNotesApp.Models;
 using LLama;
 using LLama.Common;
 using LLama.Sampling;
@@ -39,13 +40,13 @@ namespace MeetingNotesApp
         private CancellationTokenSource? _cts;
         private CancellationTokenSource? _downloadCts;
         private HttpClient? _downloadHttpClient;
-        private List<NotionWorkspaceIntegration>? _notionWorkspaces;
+        private List<NotionIntegration>? _notionIntegrations;
 
         public LLamaSharpDebugWindow()
         {
             InitializeComponent();
             CheckForDefaultModel();
-            LoadNotionWorkspaces();
+            LoadNotionIntegrations();
         }
 
         private void CheckForDefaultModel()
@@ -461,29 +462,30 @@ namespace MeetingNotesApp
 
         // --- Notion Sync ---
 
-        private void LoadNotionWorkspaces()
+        private void LoadNotionIntegrations()
         {
-            var allWorkspaces = SettingsWindow.LoadWorkspaces();
-            _notionWorkspaces = allWorkspaces
-                .Where(w => w.SelectedDatabase != null && !string.IsNullOrEmpty(w.ApiKey))
+            var allIntegrations = SettingsWindow.LoadIntegrations();
+            _notionIntegrations = allIntegrations
+                .OfType<NotionIntegration>()
+                .Where(i => i.SelectedDatabase != null && !string.IsNullOrEmpty(i.ApiKey))
                 .ToList();
 
-            if (_notionWorkspaces.Count == 0)
+            if (_notionIntegrations.Count == 0)
             {
                 NotionSyncPanel.Visibility = Visibility.Collapsed;
                 return;
             }
 
             NotionSyncPanel.Visibility = Visibility.Visible;
-            NotionWorkspaceComboBox.ItemsSource = _notionWorkspaces;
+            NotionWorkspaceComboBox.ItemsSource = _notionIntegrations;
             NotionWorkspaceComboBox.SelectedIndex = 0;
         }
 
         private void OnNotionWorkspaceSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (NotionWorkspaceComboBox.SelectedItem is NotionWorkspaceIntegration workspace)
+            if (NotionWorkspaceComboBox.SelectedItem is NotionIntegration integration)
             {
-                SelectedDatabaseText.Text = workspace.SelectedDatabase?.Name ?? "(none)";
+                SelectedDatabaseText.Text = integration.SelectedDatabase?.Name ?? "(none)";
                 UpdateSyncButtonState();
             }
         }
@@ -492,15 +494,15 @@ namespace MeetingNotesApp
         {
             SyncToNotionButton.IsEnabled =
                 !string.IsNullOrWhiteSpace(OutputTextBox.Text) &&
-                NotionWorkspaceComboBox.SelectedItem is NotionWorkspaceIntegration ws &&
-                ws.SelectedDatabase != null;
+                NotionWorkspaceComboBox.SelectedItem is NotionIntegration ni &&
+                ni.SelectedDatabase != null;
         }
 
         private async void OnSyncToNotionClicked(object sender, RoutedEventArgs e)
         {
-            if (NotionWorkspaceComboBox.SelectedItem is not NotionWorkspaceIntegration workspace)
+            if (NotionWorkspaceComboBox.SelectedItem is not NotionIntegration workspace)
             {
-                NotionSyncStatusText.Text = "No workspace selected.";
+                NotionSyncStatusText.Text = "No integration selected.";
                 return;
             }
 
@@ -534,7 +536,7 @@ namespace MeetingNotesApp
             }
         }
 
-        private async Task CreateNotionPageWithBlocks(NotionWorkspaceIntegration workspace, string outputText)
+        private async Task CreateNotionPageWithBlocks(NotionIntegration workspace, string outputText)
         {
             var database = workspace.SelectedDatabase!;
 

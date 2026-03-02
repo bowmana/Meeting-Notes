@@ -10,6 +10,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using MeetingNotesApp.Models;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -22,14 +23,13 @@ namespace MeetingNotesApp
         private string _statusDescription = "Waiting for calls to be detected";
         private Brush _statusColor = Brushes.Gray;
         private bool _isCallDetectionEnabled = true;
-        private NotionWorkspaceIntegration _selectedWorkspace;
-        private ObservableCollection<NotionWorkspaceIntegration> _availableWorkspaces;
+        private Integration _selectedIntegration;
+        private ObservableCollection<Integration> _availableIntegrations;
         private ObservableCollection<DetectedApp> _detectedApps;
         private static ObservableCollection<RecentNote> _recentNotes = new ObservableCollection<RecentNote>();
-        private NotionDatabase _selectedDatabase;
-        private ObservableCollection<NotionDatabase> _availableDatabases;
-        private bool _hasDatabases = false;
-        private string _connectedWorkspaceSummary = "";
+        private bool _hasIntegrations = false;
+        private string _connectedIntegrationSummary = "";
+        private string _connectionStatusText = "";
         private bool _isDetectionBannerVisible = false;
         private string _detectionBannerTitle = "";
         private string _detectionBannerMessage = "";
@@ -54,24 +54,21 @@ namespace MeetingNotesApp
 
             RecentNotes = new ObservableCollection<RecentNote>();
 
-            // Load saved workspaces from persistent storage
-            AvailableWorkspaces = SettingsWindow.LoadWorkspaces();
-            
+            // Load saved integrations from persistent storage
+            AvailableIntegrations = SettingsWindow.LoadIntegrations();
+
             // Load app settings
             AppSettings.LoadSettings();
-            
-            // Initialize available databases collection
-            AvailableDatabases = new ObservableCollection<NotionDatabase>();
-            
+
             // Load recent notes from Notion
-            _ = LoadRecentNotesFromNotion(AvailableWorkspaces);
+            _ = LoadRecentNotesFromNotion(AvailableIntegrations);
 
             // Set up list boxes and combo boxes
             RecentNotesListBox.ItemsSource = RecentNotes;
-            DatabaseComboBox.ItemsSource = AvailableDatabases;
+            IntegrationComboBox.ItemsSource = AvailableIntegrations;
 
-            // Populate databases from all workspaces
-            RefreshDatabaseList();
+            // Refresh integration state
+            RefreshIntegrationState();
 
             // Initialize and start call detection service
             _callDetectionService = new CallDetectionService();
@@ -126,22 +123,22 @@ namespace MeetingNotesApp
             }
         }
 
-        public NotionWorkspaceIntegration SelectedWorkspace
+        public Integration SelectedIntegration
         {
-            get => _selectedWorkspace;
+            get => _selectedIntegration;
             set
             {
-                _selectedWorkspace = value;
+                _selectedIntegration = value;
                 OnPropertyChanged();
             }
         }
 
-        public ObservableCollection<NotionWorkspaceIntegration> AvailableWorkspaces
+        public ObservableCollection<Integration> AvailableIntegrations
         {
-            get => _availableWorkspaces;
+            get => _availableIntegrations;
             set
             {
-                _availableWorkspaces = value;
+                _availableIntegrations = value;
                 OnPropertyChanged();
             }
         }
@@ -162,45 +159,32 @@ namespace MeetingNotesApp
             set => _recentNotes = value;
         }
 
-        public NotionDatabase SelectedDatabase
+        public bool HasIntegrations
         {
-            get => _selectedDatabase;
+            get => _hasIntegrations;
             set
             {
-                _selectedDatabase = value;
+                _hasIntegrations = value;
                 OnPropertyChanged();
             }
         }
 
-        public ObservableCollection<NotionDatabase> AvailableDatabases
+        public string ConnectedIntegrationSummary
         {
-            get => _availableDatabases;
+            get => _connectedIntegrationSummary;
             set
             {
-                _availableDatabases = value;
+                _connectedIntegrationSummary = value;
                 OnPropertyChanged();
             }
         }
 
-        public bool HasDatabases
+        public string ConnectionStatusText
         {
-            get => _hasDatabases;
+            get => _connectionStatusText;
             set
             {
-                _hasDatabases = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(IsDatabasePickerEnabled));
-            }
-        }
-
-        public bool IsDatabasePickerEnabled => HasDatabases;
-
-        public string ConnectedWorkspaceSummary
-        {
-            get => _connectedWorkspaceSummary;
-            set
-            {
-                _connectedWorkspaceSummary = value;
+                _connectionStatusText = value;
                 OnPropertyChanged();
             }
         }
@@ -255,55 +239,56 @@ namespace MeetingNotesApp
             }
         }
 
-        private void RefreshDatabaseList()
+        private void RefreshIntegrationState()
         {
-            // Populate databases from all configured workspaces
-            AvailableDatabases.Clear();
-            foreach (var workspace in AvailableWorkspaces)
-            {
-                if (workspace.Databases != null)
-                {
-                    foreach (var database in workspace.Databases)
-                    {
-                        // Add workspace name prefix to help identify which workspace the database belongs to
-                        var databaseCopy = new NotionDatabase
-                        {
-                            Name = $"{database.Name} ({workspace.WorkspaceName})",
-                            Id = database.Id,
-                            Type = database.Type
-                        };
-                        AvailableDatabases.Add(databaseCopy);
-                    }
-                }
-            }
+            HasIntegrations = AvailableIntegrations.Count > 0;
 
-            // Update connection state
-            HasDatabases = AvailableDatabases.Count > 0;
-
-            if (AvailableWorkspaces.Count == 1)
+            if (AvailableIntegrations.Count == 1)
             {
-                ConnectedWorkspaceSummary = AvailableWorkspaces[0].WorkspaceName;
+                var integration = AvailableIntegrations[0];
+                ConnectionStatusText = GetConnectionStatusText(integration);
+                ConnectedIntegrationSummary = integration.DisplayName;
             }
-            else if (AvailableWorkspaces.Count > 1)
+            else if (AvailableIntegrations.Count > 1)
             {
-                ConnectedWorkspaceSummary = $"{AvailableWorkspaces.Count} workspaces";
+                ConnectionStatusText = $"{AvailableIntegrations.Count} integrations connected";
+                ConnectedIntegrationSummary = "";
             }
             else
             {
-                ConnectedWorkspaceSummary = "";
+                ConnectionStatusText = "";
+                ConnectedIntegrationSummary = "";
             }
 
-            // Select first database by default
-            if (AvailableDatabases.Count > 0)
+            // Select first integration by default
+            if (AvailableIntegrations.Count > 0 && IntegrationComboBox.SelectedItem == null)
             {
-                SelectedDatabase = AvailableDatabases[0];
-                DatabaseComboBox.SelectedItem = SelectedDatabase;
+                SelectedIntegration = AvailableIntegrations[0];
+                IntegrationComboBox.SelectedItem = SelectedIntegration;
             }
+        }
+
+        private static string GetConnectionStatusText(Integration integration)
+        {
+            return integration.ProviderType switch
+            {
+                IntegrationProviderType.Notion => "Connected to Notion",
+                IntegrationProviderType.GoogleDrive => "Connected to Google Drive",
+                IntegrationProviderType.OneDrive => "Connected to OneDrive",
+                IntegrationProviderType.Confluence => "Connected to Confluence",
+                IntegrationProviderType.Slack => "Connected to Slack",
+                IntegrationProviderType.CsvExport => "CSV export ready",
+                IntegrationProviderType.ExcelExport => "Excel export ready",
+                IntegrationProviderType.MarkdownExport => "Markdown export ready",
+                IntegrationProviderType.PdfExport => "PDF export ready",
+                IntegrationProviderType.Webhook => "Webhook ready",
+                _ => "Connected"
+            };
         }
 
         private void OnStartNotesClicked(object sender, RoutedEventArgs e)
         {
-            if (DatabaseComboBox.SelectedItem == null)
+            if (IntegrationComboBox.SelectedItem is not Integration selectedIntegration)
             {
                 ValidationErrorText.Text = "Please select where to save your meeting notes";
                 ValidationErrorText.Visibility = Visibility.Visible;
@@ -311,37 +296,9 @@ namespace MeetingNotesApp
                 return;
             }
 
-            SelectedDatabase = DatabaseComboBox.SelectedItem as NotionDatabase;
+            SelectedIntegration = selectedIntegration;
 
-            // Find the workspace that owns this database
-            NotionWorkspaceIntegration? owningWorkspace = null;
-            foreach (var workspace in AvailableWorkspaces)
-            {
-                if (workspace.Databases != null)
-                {
-                    foreach (var db in workspace.Databases)
-                    {
-                        if (db.Id == SelectedDatabase?.Id)
-                        {
-                            owningWorkspace = workspace;
-                            break;
-                        }
-                    }
-                }
-                if (owningWorkspace != null) break;
-            }
-
-            if (owningWorkspace == null)
-            {
-                ValidationErrorText.Text = "Could not find the workspace for this database. Try reconnecting in Settings.";
-                ValidationErrorText.Visibility = Visibility.Visible;
-                DropdownSpacer.Visibility = Visibility.Collapsed;
-                return;
-            }
-
-            SelectedWorkspace = owningWorkspace;
-
-            // Create meeting info with selected workspace
+            // Create meeting info with selected integration
             var meetingInfo = new MeetingInfo
             {
                 Date = DateTime.Today,
@@ -349,7 +306,7 @@ namespace MeetingNotesApp
                 Organizer = "",
                 Attendees = "",
                 Comments = "",
-                Workspace = owningWorkspace,
+                Integration = selectedIntegration,
                 StartTime = DateTime.Now
             };
 
@@ -358,17 +315,17 @@ namespace MeetingNotesApp
             noteWindow.Show();
         }
 
-        private void OnConnectNotionClicked(object sender, RoutedEventArgs e)
+        private void OnAddIntegrationClicked(object sender, RoutedEventArgs e)
         {
             try
             {
-                var settingsWindow = new SettingsWindow(AvailableWorkspaces);
+                var settingsWindow = new SettingsWindow(AvailableIntegrations);
                 settingsWindow.Owner = this;
                 settingsWindow.ShowDialog();
 
                 // Refresh after settings changes
-                RefreshDatabaseList();
-                _ = LoadRecentNotesFromNotion(AvailableWorkspaces);
+                RefreshIntegrationState();
+                _ = LoadRecentNotesFromNotion(AvailableIntegrations);
             }
             catch (Exception ex)
             {
@@ -376,13 +333,19 @@ namespace MeetingNotesApp
             }
         }
 
-        private void OnDatabaseSelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void OnIntegrationSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             // Clear validation error when user makes a selection
-            if (DatabaseComboBox.SelectedItem != null)
+            if (IntegrationComboBox.SelectedItem != null)
             {
                 ValidationErrorText.Visibility = Visibility.Collapsed;
                 DropdownSpacer.Visibility = Visibility.Visible;
+
+                // Update connection status text for the selected integration
+                if (IntegrationComboBox.SelectedItem is Integration selected)
+                {
+                    ConnectionStatusText = GetConnectionStatusText(selected);
+                }
             }
         }
 
@@ -406,15 +369,15 @@ namespace MeetingNotesApp
         {
             try
             {
-                var settingsWindow = new SettingsWindow(AvailableWorkspaces);
+                var settingsWindow = new SettingsWindow(AvailableIntegrations);
                 settingsWindow.Owner = this;
                 settingsWindow.ShowDialog();
-                
-                // Refresh database list after settings changes
-                RefreshDatabaseList();
-                
+
+                // Refresh integration state after settings changes
+                RefreshIntegrationState();
+
                 // Reload recent notes from Notion
-                _ = LoadRecentNotesFromNotion(AvailableWorkspaces);
+                _ = LoadRecentNotesFromNotion(AvailableIntegrations);
             }
             catch (Exception ex)
             {
@@ -547,16 +510,18 @@ namespace MeetingNotesApp
         }
 
 
-        public static async Task LoadRecentNotesFromNotion(ObservableCollection<NotionWorkspaceIntegration> availableWorkspaces)
+        public static async Task LoadRecentNotesFromNotion(ObservableCollection<Integration> availableIntegrations)
         {
             try
             {
-                // Get the first available workspace with a database
-                var workspace = availableWorkspaces.FirstOrDefault(w => w.SelectedDatabase != null);
-                if (workspace == null) return;
+                // Get the first available Notion integration with a database
+                var notionIntegration = availableIntegrations
+                    .OfType<NotionIntegration>()
+                    .FirstOrDefault(i => i.SelectedDatabase != null);
+                if (notionIntegration == null) return;
 
                 using var httpClient = new HttpClient();
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", workspace.ApiKey);
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", notionIntegration.ApiKey);
                 httpClient.DefaultRequestHeaders.Add("Notion-Version", "2022-06-28");
 
                 var requestBody = new
@@ -575,7 +540,7 @@ namespace MeetingNotesApp
 
                 var json = JsonSerializer.Serialize(requestBody);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var response = await httpClient.PostAsync($"https://api.notion.com/v1/databases/{workspace.SelectedDatabase.Id}/query", content);
+                var response = await httpClient.PostAsync($"https://api.notion.com/v1/databases/{notionIntegration.SelectedDatabase.Id}/query", content);
 
                 if (response.IsSuccessStatusCode)
                 {

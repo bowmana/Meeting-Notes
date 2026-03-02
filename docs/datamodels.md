@@ -7,7 +7,7 @@
 ## MeetingInfo
 
 ```csharp
-// Defined in MeetingSetupWindow.xaml.cs
+// Defined in Models/MeetingInfo.cs
 public class MeetingInfo
 {
     public DateTime Date { get; set; }
@@ -15,58 +15,178 @@ public class MeetingInfo
     public string Organizer { get; set; }
     public string Attendees { get; set; }
     public string Comments { get; set; }
-    public NotionWorkspaceIntegration Workspace { get; set; }
+    public Integration Integration { get; set; }    // The selected integration to save notes to
     public DateTime StartTime { get; set; }
 }
 ```
 
-Passed from MainWindow or MeetingSetupWindow to NoteTakingWindow when starting a new meeting session.
+Passed from MainWindow to NoteTakingWindow when starting a new meeting session. The `Integration` property holds the selected integration provider.
 
 ---
 
-## NotionWorkspaceIntegration
+## Integration (Abstract Base)
 
 ```csharp
-// Defined in SettingsWindow.xaml.cs
-public class NotionWorkspaceIntegration
+// Defined in Models/Integration.cs
+public enum IntegrationProviderType
 {
-    public string WorkspaceName { get; set; }
-    public string WorkspaceId { get; set; }
+    Notion,
+    GoogleDrive,    // Future
+    OneDrive,       // Future
+    Confluence,     // Future
+    Slack,          // Future
+    CsvExport,      // Future
+    ExcelExport,    // Future
+    MarkdownExport, // Future
+    PdfExport,      // Future
+    Webhook         // Future
+}
+
+public abstract class Integration
+{
+    public string Id { get; set; }                          // Unique ID (GUID)
+    public string DisplayName { get; set; }                 // User-facing name (e.g., "Work Notion")
+    public IntegrationProviderType ProviderType { get; }    // Set by subclass
+    public string StatusText { get; set; }                  // "Connected", "Ready", etc.
+
+    // Runtime-only (not serialized)
+    public Brush StatusColor { get; set; }
+
+    // Provider-specific display (abstract, implemented by subclasses)
+    public abstract string ProviderDisplayName { get; }     // "Notion", "CSV Export", etc.
+    public abstract string TargetDescription { get; }       // "Sprint Planning DB", "C:\Notes\", etc.
+    public abstract string SaveButtonText { get; }          // "Save to Notion", "Export to CSV", etc.
+}
+```
+
+Abstract base class for all integration providers. Each provider implements its own display properties and configuration fields.
+
+---
+
+## NotionIntegration (Replaces NotionWorkspaceIntegration)
+
+```csharp
+// Defined in Models/NotionIntegration.cs
+public class NotionIntegration : Integration
+{
+    public override IntegrationProviderType ProviderType => IntegrationProviderType.Notion;
+    public override string ProviderDisplayName => "Notion";
+    public override string TargetDescription => SelectedDatabase?.Name ?? "No database selected";
+    public override string SaveButtonText => "Save to Notion";
+
     public string ApiKey { get; set; }
     public NotionDatabase SelectedDatabase { get; set; }
     public ObservableCollection<NotionDatabase> Databases { get; set; }
-    public string StatusText { get; set; }
-    public Brush StatusColor { get; set; }          // Not serializable — excluded from JSON
 }
 ```
 
-Represents a configured Notion workspace. Brush properties are runtime-only; serialization uses `SerializableWorkspace`.
+Notion-specific integration. Extends the `Integration` abstract base class with Notion API key, database selection, and database list.
 
 ---
 
-## SerializableWorkspace
+## CsvExportIntegration (Future)
 
 ```csharp
-// Defined in SettingsWindow.xaml.cs
-public class SerializableWorkspace
+// Defined in Models/CsvExportIntegration.cs
+public class CsvExportIntegration : Integration
 {
-    public string WorkspaceName { get; set; }
-    public string WorkspaceId { get; set; }
-    public string ApiKey { get; set; }
-    public NotionDatabase SelectedDatabase { get; set; }
-    public List<NotionDatabase> Databases { get; set; }
-    public string StatusText { get; set; }
+    public override IntegrationProviderType ProviderType => IntegrationProviderType.CsvExport;
+    public override string ProviderDisplayName => "CSV Export";
+    public override string TargetDescription => ExportFolderPath ?? "No folder selected";
+    public override string SaveButtonText => "Export to CSV";
+
+    public string ExportFolderPath { get; set; }
 }
 ```
 
-JSON-safe version of `NotionWorkspaceIntegration` (no `Brush` properties). Used for persistence in `workspaces.json`.
+---
+
+## ExcelExportIntegration (Future)
+
+```csharp
+// Defined in Models/ExcelExportIntegration.cs
+public class ExcelExportIntegration : Integration
+{
+    public override IntegrationProviderType ProviderType => IntegrationProviderType.ExcelExport;
+    public override string ProviderDisplayName => "Excel Export";
+    public override string TargetDescription => ExportPath ?? "No path selected";
+    public override string SaveButtonText => "Export to Excel";
+
+    public string ExportPath { get; set; }
+    public bool AppendToSingleFile { get; set; } = false;
+}
+```
+
+---
+
+## SerializableIntegration (Replaces SerializableWorkspace)
+
+```csharp
+// Defined in Models/SerializableIntegration.cs
+public class SerializableIntegration
+{
+    public string ProviderType { get; set; }       // Discriminator: "Notion", "CsvExport", "ExcelExport", etc.
+    public string Id { get; set; }
+    public string DisplayName { get; set; }
+    public string StatusText { get; set; }
+
+    // Notion-specific (null for other types)
+    public string ApiKey { get; set; }
+    public NotionDatabase SelectedDatabase { get; set; }
+    public List<NotionDatabase> Databases { get; set; }
+
+    // CSV/Excel-specific (null for Notion)
+    public string ExportPath { get; set; }
+    public bool? AppendToSingleFile { get; set; }
+}
+```
+
+Flat JSON-safe structure with nullable provider-specific fields. The `ProviderType` string acts as a discriminator for deserialization. Replaces the former `SerializableWorkspace`. Persisted to `integrations.json`.
+
+---
+
+## MeetingData (DTO for Save Services)
+
+```csharp
+// Planned: Services/IMeetingSaveService.cs
+public class MeetingData
+{
+    public string Title { get; set; }
+    public string Transcription { get; set; }
+    public string ManualNotes { get; set; }
+    public string AiSummary { get; set; }
+    public List<string> KeyPoints { get; set; }
+    public List<(string Text, string Assignee)> ActionItems { get; set; }
+    public string Duration { get; set; }
+    public string Organizer { get; set; }
+    public string Attendees { get; set; }
+    public DateTime Date { get; set; }
+    public int SpeakerCount { get; set; }
+}
+```
+
+Provider-agnostic DTO containing all meeting data. Passed to `IMeetingSaveService` implementations.
+
+---
+
+## IMeetingSaveService (Interface)
+
+```csharp
+// Planned: Services/IMeetingSaveService.cs
+public interface IMeetingSaveService
+{
+    Task SaveMeetingAsync(MeetingData data, Integration integration);
+}
+```
+
+Interface for saving meeting data to any integration provider. Implementations: `NotionSaveService`, `CsvSaveService`, `ExcelSaveService`, etc.
 
 ---
 
 ## NotionDatabase
 
 ```csharp
-// Defined in SettingsWindow.xaml.cs
+// Defined in Models/NotionDatabase.cs
 public class NotionDatabase
 {
     public string Name { get; set; }
@@ -348,7 +468,8 @@ Static utility for persisting app-level settings to `%AppData%/MeetingNotesApp/a
 
 ```
 %AppData%/MeetingNotesApp/
-├── workspaces.json        # Configured Notion workspace integrations (includes Notion API keys)
+├── integrations.json      # All configured integrations — Notion, CSV, Excel, etc. (replaces workspaces.json)
+├── workspaces.json        # Legacy — auto-migrated to integrations.json on first load
 ├── appsettings.json       # App-level settings (AI mode, cloud API key, diarization, ASR model selection)
 └── crashlog.txt           # Crash reports with stack traces (appended per crash)
 
@@ -365,7 +486,7 @@ Static utility for persisting app-level settings to `%AppData%/MeetingNotesApp/a
         └── whisper-small-en-int8/                                 # Whisper small.en ASR (~375 MB, 3 files)
 ```
 
-**Note:** Meeting data (transcriptions, notes, summaries) is NOT stored locally — it is saved directly to Notion via the API.
+**Note:** Meeting data (transcriptions, notes, summaries) is NOT stored locally beyond the session — it is saved to the user's chosen integration provider (Notion, local file export, etc.).
 
 ---
 

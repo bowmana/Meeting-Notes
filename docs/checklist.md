@@ -106,7 +106,7 @@
 - [ ] API Key Mode UI: provider dropdown, API key field, model name field, "Test Cloud AI" button
 - [ ] Persist AI settings to appsettings.json (mode, provider, API key, model path, GPU preference)
 - [ ] Replace LMStudio HTTP calls in NoteTakingWindow with `IAiSummaryService`
-- [ ] Remove LMStudio-specific test button (replace with generic "Test AI Connection")
+- [x] Remove LMStudio-specific test button (replaced with AI placeholder page in Settings sidebar)
 - [ ] Remove `SummarizeTextFallback()` — no fallback logic per CLAUDE.md rules
 
 ---
@@ -188,6 +188,15 @@
 - [x] Register CrashLogService in App.xaml.cs OnStartup
 - [x] Fix native segfault crash — sherpa-onnx config structs require assign-back pattern (SherpaOnnxASRService.cs + SherpaOnnxDiarizationService.cs)
 
+### Diarization Accuracy — Over-Segmentation Fix
+- [x] Increase default clustering threshold from 0.7 to 0.85
+- [x] Increase default MinDurationOff from 0.5 to 0.8
+- [x] Add post-diarization embedding-based speaker merge (`MergeSimilarSpeakersAsync`)
+- [x] Add `EnablePostMerge` and `PostMergeThreshold` to `DiarizationSettings`
+- [x] Add post-merge UI controls (CheckBox + threshold TextBox) to Settings
+- [x] Fix speaker count calculation (`Distinct().Count()` instead of `Max+1`)
+- [x] Integrate post-merge step into NoteTakingWindow pipeline with status updates
+
 ### Multi-Model Diarization Segmentation
 - [x] Create DiarizationModelDefinition.cs (enum + static registry: Pyannote 3.0, Reverb v1)
 - [x] Refactor DiarizationModelManager.cs for per-model segmentation download/delete/paths
@@ -200,7 +209,125 @@
 
 ---
 
-## v0.3 — Call Detection
+## v0.2.5 — Speaker Identification (Automatic Attendee Detection)
+
+### Data Model Changes
+- [x] Add `CustomSpeakerName` and `EffectiveSpeakerName` to `TranscriptionSegment`
+- [x] Add `SpeakerNames` dictionary, `SetSpeakerName()`, `GetNamedAttendees()`, `GetSpeakerIndices()` to `DiarizedTranscription`
+- [x] Update `DisplayText` and `ToFlatText()` to use effective speaker names
+
+### Layer 1: Manual Speaker Labeling UI
+- [x] Add collapsible Speaker Identification Panel to NoteTakingWindow (above transcript)
+- [x] Editable speaker name fields per detected speaker
+- [x] Auto-populate Attendees field from named speakers
+- [x] Refresh transcript display when speaker names change
+- [x] Update Notion export with effective speaker names (Attendees + Speakers + Transcription fields)
+
+### Layer 2: LLM-Based Name Inference
+- [x] Create `SpeakerNameInferenceService.cs` (ISpeakerNameInferenceService interface + implementation)
+- [x] Few-shot prompting with Phi-4-mini for name extraction from conversational cues
+- [x] Structured JSON output with confidence scores and evidence
+- [x] Integrate into post-diarization pipeline (auto-runs after transcription)
+- [x] Pre-populate speaker panel with inferred names and confidence badges
+- [x] Skip speakers already identified by voice matching
+
+### Layer 3: Voice Fingerprinting (Cross-Meeting Persistence)
+- [x] Create `SpeakerEmbeddingHelper.cs` (wraps sherpa-onnx SpeakerEmbeddingExtractor)
+- [x] Create `SpeakerProfileService.cs` (local profile storage, cosine similarity matching)
+- [x] Reuse 3D-Speaker CampPlus model (already downloaded for diarization)
+- [x] Auto-match speakers against stored voice profiles before LLM inference
+- [x] Auto-enroll speakers when user names them (running average embeddings)
+- [x] Speaker profile persistence at `%AppData%/MeetingNotesApp/speaker_profiles.json`
+- [ ] Add Speaker Profiles management UI in Settings (list, delete, clear all)
+
+### Documentation
+- [x] Update `docs/folder_filestructure.md` with new files and storage
+- [x] Update `docs/checklist.md` with v0.2.5 task breakdown
+- [ ] Update `docs/features.md` with speaker identification feature spec
+- [ ] Update `docs/datamodels.md` with new data models
+- [ ] Update `docs/roadmap.md` with v0.2.5 milestone
+
+---
+
+## v0.3 — Multi-Provider Integration Architecture + Settings Overhaul
+
+### Documentation (Phase 0 — Planning)
+- [x] Update `docs/goals.md` — flexible destinations, multi-provider scope
+- [x] Update `docs/features.md` — Settings sidebar, provider picker, dynamic save button
+- [x] Update `docs/ui.md` — new layouts, provider picker grid, user flows
+- [x] Update `docs/datamodels.md` — Integration hierarchy, SerializableIntegration, MeetingData DTO
+- [x] Update `docs/techstack.md` — save service architecture, future NuGet deps
+- [x] Update `docs/roadmap.md` — insert v0.3 milestone, reorder subsequent versions
+- [x] Update `docs/checklist.md` — v0.3 task breakdown
+- [x] Update `docs/folder_filestructure.md` — planned Models/ and Services/ directories
+- [x] Update `docs/marketing.md` — "Export Anywhere" value prop, non-Notion FAQ
+- [x] Update `docs/niche.md` — broaden target beyond Notion users
+- [x] Update `CLAUDE.md` — multi-provider edge cases and product rules
+
+### Phase A — Settings Sidebar Navigation
+- [x] Restructure SettingsWindow.xaml from scrollable page to sidebar + content panel Grid
+- [x] Create sidebar with 4 navigation items (Integrations, Speech & Audio, AI, General)
+- [x] Implement sidebar selection logic (active item styling, content panel switching)
+- [x] Move Speaker Diarization + ASR sections into "Speech & Audio" content panel
+- [x] Move AI Settings into "AI" content panel (placeholder — legacy LMStudio code removed)
+- [x] Move Call Detection + General Settings into "General" content panel
+- [x] Verify all existing Settings functionality still works after restructure
+
+### Phase B — Integration Data Models
+- [x] Create `Models/` directory
+- [x] Create `Integration` abstract base class + `IntegrationProviderType` enum in `Models/Integration.cs`
+- [x] Create `NotionIntegration : Integration` in `Models/NotionIntegration.cs`
+- [x] Create `CsvExportIntegration : Integration` in `Models/CsvExportIntegration.cs`
+- [x] Create `ExcelExportIntegration : Integration` in `Models/ExcelExportIntegration.cs`
+- [x] Create `SerializableIntegration` in `Models/SerializableIntegration.cs`
+- [x] Update `MeetingInfo.Workspace` to `MeetingInfo.Integration` (type `Integration`)
+- [x] Implement `LoadIntegrations()` with auto-migration from `workspaces.json` to `integrations.json`
+- [x] Implement `SaveIntegrations()` for new format
+
+### Phase C — Provider Picker UI
+- [x] Replace "Notion Workspace Integrations" section with "Integrations" in SettingsWindow
+- [x] Build provider selection card grid (2-category WrapPanel: Cloud Services + Local Exports)
+- [x] Implement 10 provider cards with badge, title, description, and "Coming soon" badges
+- [x] Add state management: `IsPickerVisible`, `IsFormVisible`, `SelectedProviderType`
+- [x] Add "< Back" navigation from provider form to picker
+- [x] Implement "Cancel" button on picker to return to integration list
+- [x] Notion card: functional, opens Notion configuration form
+- [x] All other cards: dimmed (`Opacity=0.5`), not clickable, "Coming soon" pill badge
+
+### Phase D — Notion Refactor
+- [x] Update integration list template to show provider badge + provider name + target description
+- [x] Wire existing Notion add/edit/delete/fetch handlers to use `NotionIntegration` instead of `NotionWorkspaceIntegration`
+- [x] Remove `NotionWorkspaceIntegration` and `SerializableWorkspace` classes from `SettingsWindow.xaml.cs`
+- [x] Move `NotionDatabase` to `Models/` directory
+- [x] Verify existing Notion workspace CRUD still works end-to-end
+
+### Phase E — MainWindow + NoteTakingWindow Updates
+- [x] Change `AvailableWorkspaces` to `AvailableIntegrations` (`ObservableCollection<Integration>`)
+- [x] Replace database dropdown with integration selector dropdown
+- [x] Update empty state: "Get Started" text + "Add Integration" button
+- [x] Update connected state: dynamic status text per provider type
+- [x] Update `OnStartNotesClicked()` to pass `Integration` instead of `NotionWorkspaceIntegration`
+- [x] Make NoteTakingWindow save button text dynamic (`SaveButtonText` bound property)
+- [x] Update Recent Notes loading to only query Notion integrations
+
+### Phase F — Save Service Extraction
+- [x] Create `Services/` directory
+- [x] Create `MeetingData` DTO + `IMeetingSaveService` interface in `Services/IMeetingSaveService.cs`
+- [x] Extract `SaveToNotionAsync()` from `NoteTakingWindow.xaml.cs` into `Services/NotionSaveService.cs`
+- [x] Update `NoteTakingWindow` to use `IMeetingSaveService` based on `_meetingInfo.Integration.ProviderType`
+- [x] Create `Services/CsvSaveService.cs` placeholder
+- [x] Create `Services/ExcelSaveService.cs` placeholder
+
+### Phase G — Cleanup
+- [x] Remove any remaining LMStudio legacy code from SettingsWindow
+- [x] Remove `MeetingSetupWindow` (dead code — moved `MeetingInfo` to `Models/MeetingInfo.cs`, deleted both `.xaml` and `.xaml.cs`)
+- [x] Search and replace all `NotionWorkspaceIntegration` references with `Integration`/`NotionIntegration`
+- [x] Final documentation pass: update `docs/folder_filestructure.md` with all actual new files
+- [ ] Build and test the app end-to-end (add Notion integration, start meeting, save, verify)
+
+---
+
+## v0.4 — Call Detection
 
 - [ ] Process monitoring for active calls
 - [ ] System audio state detection
@@ -209,7 +336,7 @@
 
 ---
 
-## v0.4 — System Tray + Background
+## v0.5 — System Tray + Background
 
 - [ ] System tray icon
 - [ ] Minimize to tray
@@ -219,13 +346,43 @@
 
 ---
 
-## v0.5 — Enhanced Notion Integration
+## v0.6 — Enhanced Notion Integration
 
 - [ ] Database auto-creation
 - [ ] Block-level content writing
 - [ ] Handle 2000-char rich_text limit
 - [ ] Meeting templates
 - [ ] Rate limit handling
+
+---
+
+## v0.7 — Local Export Providers
+
+- [ ] CSV Export (`CsvSaveService` implementation)
+- [ ] Excel Export (`ExcelSaveService` via ClosedXML)
+- [ ] Markdown Export (`MarkdownSaveService`)
+- [ ] PDF Export (`PdfSaveService` via QuestPDF or itext7)
+- [ ] File browser dialogs for export paths
+- [ ] Remove "Coming soon" from implemented providers
+
+---
+
+## v0.8 — Cloud Integrations
+
+- [ ] Google Drive (OAuth2, save as Google Docs)
+- [ ] OneDrive/SharePoint (Microsoft Graph API)
+- [ ] Confluence (Atlassian API)
+- [ ] Slack (Web API, post summaries)
+- [ ] Webhook (custom endpoint + headers)
+
+---
+
+## UI Polish — Button Visual Feedback
+
+### Icon/Transparent Button Hover & Press States
+- [x] Create reusable `IconButtonStyle` in `Styles/Styles.xaml` (semi-transparent hover background, pressed state, Hand cursor, custom ControlTemplate so triggers aren't overridden by local values)
+- [x] Apply `IconButtonStyle` to Settings gear icon button (`MainWindow.xaml` line 32)
+- [x] Apply `IconButtonStyle` to Detection banner dismiss "✕" button (`MainWindow.xaml` line 256)
 
 ---
 

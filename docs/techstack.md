@@ -3,7 +3,7 @@
 ## Stack Goals
 - Local-first processing (transcription + AI on-device)
 - Native Windows audio capture (system audio loopback)
-- Direct Notion API integration (no middleware)
+- Multi-provider integration architecture (Notion, Google Drive, CSV, Excel, and more)
 - Fast startup, responsive UI during recording
 
 ## Stack
@@ -82,6 +82,37 @@ The app supports two AI summarization modes. The user selects their preferred mo
 - Privacy disclosure shown when user selects this mode
 - **Privacy: transcript text sent to cloud provider. Audio always stays local.**
 
+### Integration Save Architecture
+
+The app uses a multi-provider integration system to save meeting notes to the user's chosen destination.
+
+#### Save Service Interface
+```
+IMeetingSaveService
+├── SaveMeetingAsync(MeetingData, Integration): Task
+
+Implementations:
+├── NotionSaveService     — saves to Notion database via REST API
+├── CsvSaveService        — exports to .csv files locally (future)
+├── ExcelSaveService      — exports to .xlsx files locally (future)
+├── MarkdownSaveService   — exports to .md files locally (future)
+├── PdfSaveService        — exports to .pdf files locally (future)
+├── GoogleDriveSaveService— saves to Google Drive (future)
+├── OneDriveSaveService   — saves to OneDrive/SharePoint (future)
+├── ConfluenceSaveService — saves to Confluence pages (future)
+├── SlackSaveService      — posts to Slack channels (future)
+└── WebhookSaveService    — sends to custom API endpoint (future)
+```
+
+#### Integration Data Model
+```
+Integration (abstract base)
+├── NotionIntegration      — API key, selected database, databases list
+├── CsvExportIntegration   — export folder path (future)
+├── ExcelExportIntegration — export path, append mode (future)
+└── (more per provider)
+```
+
 ### Notion Integration
 - **Notion REST API v2022-06-28** — Direct HTTP calls via `HttpClient`
 - Database query: `POST /v1/databases/{id}/query` (fetch recent notes)
@@ -90,10 +121,18 @@ The app supports two AI summarization modes. The user selects their preferred mo
 - Properties mapped: Title, Transcription, My Notes, AI Summary, Key Points, Action Items, Duration, Organizer, Attendees, Date
 
 ### State + Storage
-- **Workspace config**: `%AppData%/MeetingNotesApp/workspaces.json` (JSON, contains Notion API keys)
+- **Integration config**: `%AppData%/MeetingNotesApp/integrations.json` (JSON, all integration providers — replaces `workspaces.json`)
 - **App settings**: `%AppData%/MeetingNotesApp/appsettings.json` (JSON, AI mode, cloud API key, model path)
+- **Speaker profiles**: `%AppData%/MeetingNotesApp/speaker_profiles.json` (voice fingerprints for cross-meeting identification)
 - **AI model**: `%LocalAppData%/MeetingNotesApp/models/Phi-4-mini-instruct-Q4_K_M.gguf` (downloaded on first use)
-- **Meeting data**: Notion databases only (no local persistence of notes)
+- **Meeting data**: Saved to user's chosen integration provider (not stored locally beyond the session)
+
+### Future NuGet Dependencies (for additional providers)
+| Package | Purpose |
+|---------|---------|
+| ClosedXML | Excel (.xlsx) export — MIT license, ~2MB |
+| Google.Apis.Drive.v3 | Google Drive integration |
+| itext7 or QuestPDF | PDF export |
 
 ## Architecture
 - **Code-behind pattern** — each window has `.xaml` + `.xaml.cs` with direct event handlers

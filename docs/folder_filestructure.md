@@ -8,27 +8,38 @@ meeting notes/
 ├── App.xaml                               # Application entry, global resource dictionaries
 ├── App.xaml.cs                            # Startup logic: registers CrashLogService global exception handlers
 │
-├── MainWindow.xaml                        # Main interface: status bar, database selection, test functions, recent notes
-├── MainWindow.xaml.cs                     # Code-behind: INotifyPropertyChanged, Notion recent notes fetch, database refresh, navigation
-│                                          #   Classes: MainWindow, DetectedApp, RecentNote
+├── MainWindow.xaml                        # Main interface: status bar, integration selector dropdown, test functions, recent notes
+├── MainWindow.xaml.cs                     # Code-behind: INotifyPropertyChanged, Notion recent notes fetch, integration selector (replaces database dropdown), dynamic connection status
+│                                          #   Uses Integration/NotionIntegration models (LoadIntegrations). Classes: MainWindow, DetectedApp, RecentNote
 │
-├── MeetingSetupWindow.xaml                # Meeting setup form: workspace selection, meeting info entry
-├── MeetingSetupWindow.xaml.cs             # Code-behind: form validation, creates MeetingInfo, opens NoteTakingWindow
-│                                          #   Classes: MeetingSetupWindow, MeetingInfo
-│
-├── NoteTakingWindow.xaml                  # Note-taking UI: transcription, notes, summary, key points, action items
+├── NoteTakingWindow.xaml                  # Note-taking UI: transcription, notes, summary, key points, action items, speaker identification panel, dynamic save button
 ├── NoteTakingWindow.xaml.cs               # Code-behind: audio capture (NAudio WASAPI), speech recognition (ISpeechRecognitionService / sherpa-onnx Moonshine ASR),
-│                                          #   AI summary (via IAiSummaryService), Notion save, duration timer
-│                                          #   Classes: NoteTakingWindow, KeyPoint, ActionItem
+│                                          #   AI summary (via IAiSummaryService), speaker identification pipeline (voice fingerprinting + LLM inference),
+│                                          #   dynamic SaveButtonText from Integration.SaveButtonText, Notion save, duration timer
+│                                          #   Classes: NoteTakingWindow, KeyPoint, ActionItem, SpeakerEntry
 │
-├── SettingsWindow.xaml                    # Settings UI: workspace management, AI config, diarization config, ASR model browser, call detection, general settings
-├── SettingsWindow.xaml.cs                 # Code-behind: Notion API workspace CRUD, database fetch, AI provider config,
-│                                          #   diarization model download, multi-model ASR download/delete/selection, workspace persistence (JSON), settings save/load
-│                                          #   Classes: SettingsWindow, ASRModelViewModel, SerializableWorkspace, NotionWorkspaceIntegration,
-│                                          #            NotionDatabase, AppSettings (static), AiSettings, AiMode (enum), DiarizationSettings, ASRSettings
+├── SettingsWindow.xaml                    # Settings UI: sidebar navigation (Integrations, Speech & Audio, AI, General), provider picker, integration CRUD
+├── SettingsWindow.xaml.cs                 # Code-behind: sidebar navigation (SelectedSettingsPage), integration CRUD using NotionIntegration, Notion API database fetch,
+│                                          #   diarization model download, multi-model ASR download/delete/selection, integration persistence (JSON), settings save/load
+│                                          #   Static methods: LoadIntegrations/SaveIntegrations (with auto-migration from workspaces.json)
+│                                          #   Classes: SettingsWindow, EqualityConverter (IMultiValueConverter), ASRModelViewModel, AppSettings (static), DiarizationSettings, ASRSettings
 │
 ├── TranscriptionSegment.cs               # Data models for speaker-tagged transcription
-│                                          #   Classes: TranscriptionSegment, DiarizedTranscription
+│                                          #   Classes: TranscriptionSegment (+ CustomSpeakerName, EffectiveSpeakerName),
+│                                          #            DiarizedTranscription (+ SpeakerNames dict, SetSpeakerName, GetNamedAttendees, GetSpeakerIndices)
+│
+├── SpeakerNameInferenceService.cs        # LLM-based speaker name inference from transcript context
+│                                          #   Uses LLamaSharp Phi-4-mini to infer names from conversational cues
+│                                          #   Classes: SpeakerNameInference, ISpeakerNameInferenceService, SpeakerNameInferenceService
+│
+├── SpeakerEmbeddingHelper.cs             # Speaker voice embedding extraction via sherpa-onnx
+│                                          #   Wraps SpeakerEmbeddingExtractor with 3D-Speaker CampPlus model
+│                                          #   Class: SpeakerEmbeddingHelper
+│
+├── SpeakerProfileService.cs              # Cross-meeting speaker voice profile persistence
+│                                          #   Stores voice fingerprints at %AppData%/speaker_profiles.json
+│                                          #   Cosine similarity matching against enrolled profiles
+│                                          #   Classes: SpeakerProfile, SpeakerProfileService
 │
 ├── ISpeakerDiarizationService.cs         # Interface for speaker diarization service
 │                                          #   Interface: ISpeakerDiarizationService (AreModelsAvailable, DiarizeAsync)
@@ -77,6 +88,21 @@ meeting notes/
 │                                          #   LLamaWeights model loading, StatelessExecutor inference,
 │                                          #   DefaultSamplingPipeline config, async streaming tokens, resource disposal
 │
+├── Models/                                # Data model classes (v0.3)
+│   ├── Integration.cs                     # Abstract base class + IntegrationProviderType enum (Id, DisplayName, ProviderType, StatusText, StatusColor, ProviderDisplayName, TargetDescription, SaveButtonText)
+│   ├── NotionIntegration.cs               # Notion-specific integration (ApiKey, SelectedDatabase, Databases) — replaces NotionWorkspaceIntegration
+│   ├── NotionDatabase.cs                  # Notion database model (Name, Id, Type) — moved from SettingsWindow.xaml.cs in Phase D
+│   ├── CsvExportIntegration.cs            # CSV export integration (ExportFolderPath)
+│   ├── ExcelExportIntegration.cs          # Excel export integration (ExportPath, AppendToSingleFile)
+│   ├── SerializableIntegration.cs         # JSON-safe flat model with ProviderType discriminator — replaces SerializableWorkspace
+│   └── MeetingInfo.cs                     # Meeting session data (Title, Organizer, Attendees, Integration, StartTime) — moved from MeetingSetupWindow.xaml.cs
+│
+├── Services/                              # Business logic services (v0.3)
+│   ├── IMeetingSaveService.cs             # IMeetingSaveService interface + MeetingData DTO (provider-agnostic meeting data container)
+│   ├── NotionSaveService.cs               # Notion API save implementation (extracted from NoteTakingWindow — property mapping, 2000-char truncation, speaker data)
+│   ├── CsvSaveService.cs                  # CSV file export placeholder (throws NotImplementedException — coming soon)
+│   └── ExcelSaveService.cs                # Excel file export placeholder (throws NotImplementedException — coming soon)
+│
 ├── Styles/                                # XAML resource dictionaries
 │   ├── Colors.xaml                        # Color palette: primary (grey-green), backgrounds (dark), text, status colors
 │   └── Styles.xaml                        # Shared control styles (buttons, text, containers)
@@ -123,9 +149,11 @@ meeting notes/
 
 ```
 %AppData%/MeetingNotesApp/
-├── workspaces.json        # Configured Notion workspace integrations (Notion API keys, selected databases)
-├── appsettings.json       # App-level settings (AI mode, cloud API key, diarization, ASR model selection)
-└── crashlog.txt           # Crash reports (unhandled exceptions with stack traces, appended per crash)
+├── integrations.json        # All configured integrations — Notion, CSV, Excel, etc. (replaces workspaces.json)
+├── workspaces.json          # Legacy — auto-migrated to integrations.json on first load
+├── appsettings.json         # App-level settings (AI mode, cloud API key, diarization, ASR model selection)
+├── speaker_profiles.json    # Enrolled speaker voice profiles (name + embedding vector + metadata)
+└── crashlog.txt             # Crash reports (unhandled exceptions with stack traces, appended per crash)
 
 %LocalAppData%/MeetingNotesApp/
 └── models/
@@ -156,17 +184,17 @@ meeting notes/
 
 | Layer | Description |
 |-------|-------------|
-| **Windows** | WPF windows with code-behind + INotifyPropertyChanged (MainWindow, NoteTakingWindow, SettingsWindow, MeetingSetupWindow, LLamaSharpDebugWindow) |
-| **Models** | Inline classes: MeetingInfo, NotionWorkspaceIntegration, NotionDatabase, DetectedApp, RecentNote, KeyPoint, ActionItem |
+| **Windows** | WPF windows with code-behind + INotifyPropertyChanged (MainWindow, NoteTakingWindow, SettingsWindow, LLamaSharpDebugWindow) |
+| **Models** | `Models/` directory: Integration (base), NotionIntegration, CsvExportIntegration, ExcelExportIntegration, SerializableIntegration, NotionDatabase, MeetingInfo. Inline: DetectedApp, RecentNote, KeyPoint, ActionItem |
+| **Services** | `Services/` directory: IMeetingSaveService (interface + MeetingData DTO), NotionSaveService, CsvSaveService, ExcelSaveService |
 | **APIs** | Notion REST API (HttpClient), Cloud AI provider OpenAI-compatible API (HttpClient, API Key Mode only) |
 | **Audio** | NAudio WasapiLoopbackCapture → WAV conversion → sherpa-onnx speaker diarization → sherpa-onnx Moonshine ASR per-segment transcription (float[] sub-arrays) |
-| **Persistence** | JSON files in %AppData%/MeetingNotesApp/ for workspace config |
+| **Persistence** | JSON files in %AppData%/MeetingNotesApp/ for integration config, app settings, speaker profiles |
 
 ## Key Dependencies
 
 | Class/Window | Key Dependencies |
 |-------------|-----------------|
-| MainWindow | NotionWorkspaceIntegration, NotionDatabase, RecentNote, HttpClient (Notion API), LLamaSharpDebugWindow |
-| NoteTakingWindow | MeetingInfo, NAudio (WasapiLoopbackCapture, AudioFileReader, MediaFoundationResampler), ISpeechRecognitionService (SherpaOnnxASRService), ISpeakerDiarizationService, AudioHelper, DiarizedTranscription, IAiSummaryService, HttpClient (Notion API) |
-| SettingsWindow | NotionWorkspaceIntegration, NotionDatabase, SerializableWorkspace, AppSettings, AiSettings, HttpClient (Notion API) |
-| MeetingSetupWindow | MeetingInfo, NotionWorkspaceIntegration |
+| MainWindow | Integration (base), NotionIntegration, RecentNote, HttpClient (Notion API), LLamaSharpDebugWindow |
+| NoteTakingWindow | MeetingInfo, Integration, IMeetingSaveService (NotionSaveService), MeetingData, NAudio (WasapiLoopbackCapture, AudioFileReader, MediaFoundationResampler), ISpeechRecognitionService (SherpaOnnxASRService), ISpeakerDiarizationService, AudioHelper, DiarizedTranscription |
+| SettingsWindow | Integration (base), NotionIntegration, NotionDatabase, SerializableIntegration, AppSettings, AiSettings, HttpClient (Notion API) |

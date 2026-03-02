@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -13,8 +14,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Navigation;
+using MeetingNotesApp.Models;
 
 namespace MeetingNotesApp
 {
@@ -25,23 +28,26 @@ namespace MeetingNotesApp
         private bool _autoSaveNotes = true;
         private bool _showNotifications = true;
         private bool _isFormVisible = false;
-        private string _formTitle = "Add Workspace";
-        private NotionWorkspaceIntegration _editingWorkspace;
-        private ObservableCollection<NotionWorkspaceIntegration> _workspaceIntegrations;
+        private bool _isPickerVisible = false;
+        private string _formTitle = "Add Integration";
+        private IntegrationProviderType? _selectedProviderType;
+        private NotionIntegration _editingIntegration;
+        private ObservableCollection<Integration> _integrations;
         private ObservableCollection<DetectedApp> _detectedApps;
         private ObservableCollection<NotionDatabase> _availableDatabases;
         private CancellationTokenSource? _diarizationDownloadCts;
         private CancellationTokenSource? _asrDownloadCts;
+        private string _selectedSettingsPage = "Integrations";
 
-        public SettingsWindow(ObservableCollection<NotionWorkspaceIntegration> sharedWorkspaces = null)
+        public SettingsWindow(ObservableCollection<Integration> sharedIntegrations = null)
         {
             InitializeComponent();
             DataContext = this;
 
             // Initialize collections
-            // Use shared workspace list from MainWindow, or create new if not provided
-            WorkspaceIntegrations = sharedWorkspaces ?? new ObservableCollection<NotionWorkspaceIntegration>();
-            
+            // Use shared integration list from MainWindow, or create new if not provided
+            Integrations = sharedIntegrations ?? new ObservableCollection<Integration>();
+
             // Load app settings
             AppSettings.LoadSettings();
 
@@ -57,18 +63,20 @@ namespace MeetingNotesApp
             AvailableDatabases = new ObservableCollection<NotionDatabase>();
 
             // Set up list boxes
-            WorkspaceListBox.ItemsSource = WorkspaceIntegrations;
+            WorkspaceListBox.ItemsSource = Integrations;
             DetectedAppsListBox.ItemsSource = DetectedApps;
             DatabaseComboBox.ItemsSource = AvailableDatabases;
 
-            // Initialize editing workspace
-            EditingWorkspace = new NotionWorkspaceIntegration();
+            // Initialize editing integration
+            EditingIntegration = new NotionIntegration();
 
             // Initialize diarization UI state
             RefreshDiarizationModelList();
             UpdateEmbeddingModelStatus();
             DiarizationNumSpeakersBox.Text = AppSettings.Diarization.NumSpeakers.ToString();
-            DiarizationThresholdBox.Text = AppSettings.Diarization.Threshold.ToString("F1");
+            DiarizationThresholdBox.Text = AppSettings.Diarization.Threshold.ToString("F2");
+            DiarizationPostMergeCheckBox.IsChecked = AppSettings.Diarization.EnablePostMerge;
+            DiarizationPostMergeThresholdBox.Text = AppSettings.Diarization.PostMergeThreshold.ToString("F2");
 
             // Initialize ASR model list UI
             RefreshASRModelList();
@@ -121,8 +129,22 @@ namespace MeetingNotesApp
             {
                 _isFormVisible = value;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(IsListVisible));
             }
         }
+
+        public bool IsPickerVisible
+        {
+            get => _isPickerVisible;
+            set
+            {
+                _isPickerVisible = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsListVisible));
+            }
+        }
+
+        public bool IsListVisible => !IsPickerVisible && !IsFormVisible;
 
         public string FormTitle
         {
@@ -134,22 +156,22 @@ namespace MeetingNotesApp
             }
         }
 
-        public NotionWorkspaceIntegration EditingWorkspace
+        public NotionIntegration EditingIntegration
         {
-            get => _editingWorkspace;
+            get => _editingIntegration;
             set
             {
-                _editingWorkspace = value;
+                _editingIntegration = value;
                 OnPropertyChanged();
             }
         }
 
-        public ObservableCollection<NotionWorkspaceIntegration> WorkspaceIntegrations
+        public ObservableCollection<Integration> Integrations
         {
-            get => _workspaceIntegrations;
+            get => _integrations;
             set
             {
-                _workspaceIntegrations = value;
+                _integrations = value;
                 OnPropertyChanged();
             }
         }
@@ -174,25 +196,82 @@ namespace MeetingNotesApp
             }
         }
 
+        public string SelectedSettingsPage
+        {
+            get => _selectedSettingsPage;
+            set
+            {
+                _selectedSettingsPage = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private void OnSidebarItemClicked(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is string page)
+            {
+                SelectedSettingsPage = page;
+            }
+        }
+
         private void OnAddWorkspaceClicked(object sender, RoutedEventArgs e)
         {
-            FormTitle = "Add Workspace";
-            EditingWorkspace = new NotionWorkspaceIntegration();
-            IsFormVisible = true;
+            // Show the provider picker instead of the form directly
+            IsPickerVisible = true;
+            IsFormVisible = false;
+        }
+
+        private void OnProviderCardClicked(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is string providerTag)
+            {
+                if (providerTag == "Notion")
+                {
+                    _selectedProviderType = IntegrationProviderType.Notion;
+                    FormTitle = "Add Integration";
+                    EditingIntegration = new NotionIntegration();
+                    IsPickerVisible = false;
+                    IsFormVisible = true;
+                }
+                // Other providers are "Coming soon" — not clickable
+            }
+        }
+
+        private void OnPickerBackToList(object sender, RoutedEventArgs e)
+        {
+            IsPickerVisible = false;
+            IsFormVisible = false;
+        }
+
+        private void OnFormBackToPicker(object sender, RoutedEventArgs e)
+        {
+            IsFormVisible = false;
+            IsPickerVisible = true;
         }
 
         private void OnEditWorkspaceClicked(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is NotionWorkspaceIntegration workspace)
+            if (sender is Button button && button.Tag is NotionIntegration integration)
             {
-                FormTitle = "Edit Workspace";
-                EditingWorkspace = new NotionWorkspaceIntegration
+                FormTitle = "Edit Integration";
+                EditingIntegration = new NotionIntegration
                 {
-                    WorkspaceName = workspace.WorkspaceName,
-                    WorkspaceId = workspace.WorkspaceId,
-                    ApiKey = workspace.ApiKey,
-                    SelectedDatabase = workspace.SelectedDatabase
+                    Id = integration.Id,
+                    DisplayName = integration.DisplayName,
+                    ApiKey = integration.ApiKey,
+                    SelectedDatabase = integration.SelectedDatabase,
+                    Databases = integration.Databases
                 };
+
+                // Pre-populate the databases list so the user can re-select
+                AvailableDatabases.Clear();
+                if (integration.Databases != null)
+                {
+                    foreach (var db in integration.Databases)
+                        AvailableDatabases.Add(db);
+                }
+
+                IsPickerVisible = false;
                 IsFormVisible = true;
             }
         }
@@ -331,7 +410,7 @@ namespace MeetingNotesApp
 
         private void OnTestWorkspaceClicked(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is NotionWorkspaceIntegration workspace)
+            if (sender is Button button && button.Tag is NotionIntegration integration)
             {
                 // Testing connection
             }
@@ -339,10 +418,10 @@ namespace MeetingNotesApp
 
         private void OnDeleteWorkspaceClicked(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is NotionWorkspaceIntegration workspace)
+            if (sender is Button button && button.Tag is Integration integration)
             {
-                WorkspaceIntegrations.Remove(workspace);
-                SaveWorkspaces(WorkspaceIntegrations); // Save after deletion
+                Integrations.Remove(integration);
+                SaveIntegrations(Integrations);
             }
         }
 
@@ -363,11 +442,11 @@ namespace MeetingNotesApp
                 return;
             }
 
-            // Create or update workspace integration
-            var workspace = new NotionWorkspaceIntegration
+            // Create or update Notion integration
+            var integration = new NotionIntegration
             {
-                WorkspaceName = WorkspaceNameBox.Text,
-                WorkspaceId = $"workspace-{Guid.NewGuid().ToString("N")[..8]}",
+                Id = EditingIntegration?.Id ?? Guid.NewGuid().ToString("N")[..16],
+                DisplayName = WorkspaceNameBox.Text,
                 ApiKey = ApiKeyBox.Password,
                 SelectedDatabase = DatabaseComboBox.SelectedItem as NotionDatabase,
                 Databases = new ObservableCollection<NotionDatabase>(AvailableDatabases),
@@ -376,34 +455,36 @@ namespace MeetingNotesApp
             };
 
             // Add or update in collection
-            if (FormTitle == "Add Workspace")
+            if (FormTitle == "Add Integration")
             {
-                WorkspaceIntegrations.Add(workspace);
+                Integrations.Add(integration);
             }
             else
             {
-                // Find and update existing workspace
-                var existingIndex = WorkspaceIntegrations.ToList().FindIndex(w => w.WorkspaceName == EditingWorkspace.WorkspaceName);
+                // Find and update existing integration by ID
+                var existingIndex = Integrations.ToList().FindIndex(i => i.Id == EditingIntegration?.Id);
                 if (existingIndex >= 0)
                 {
-                    WorkspaceIntegrations[existingIndex] = workspace;
+                    Integrations[existingIndex] = integration;
                 }
             }
 
             // Save to persistent storage
-            SaveWorkspaces(WorkspaceIntegrations);
+            SaveIntegrations(Integrations);
 
             // Clear the form
             WorkspaceNameBox.Text = "";
             ApiKeyBox.Password = "";
             AvailableDatabases.Clear();
-            
+
             IsFormVisible = false;
+            IsPickerVisible = false;
         }
 
         private void OnCancelWorkspaceClicked(object sender, RoutedEventArgs e)
         {
             IsFormVisible = false;
+            IsPickerVisible = false;
         }
 
         private void OnNotionIntegrationLinkClicked(object sender, RequestNavigateEventArgs e)
@@ -420,47 +501,6 @@ namespace MeetingNotesApp
         private void OnCloseClicked(object sender, RoutedEventArgs e)
         {
             Close();
-        }
-
-        private async void OnTestLMStudioClicked(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                using var httpClient = new HttpClient();
-                
-                var requestBody = new
-                {
-                    model = "meta-llama-3.1-8b-instruct",
-                    messages = new[]
-                    {
-                        new { role = "user", content = "Hello, can you respond with 'LMStudio connection successful'?" }
-                    },
-                    max_tokens = 50,
-                    temperature = 0.1
-                };
-
-                var json = JsonSerializer.Serialize(requestBody);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                
-                var response = await httpClient.PostAsync("http://127.0.0.1:1234/v1/chat/completions", content);
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                    var responseJson = JsonSerializer.Deserialize<JsonElement>(responseContent);
-                    var aiResponse = responseJson.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
-                    
-                    MessageBox.Show($"LMStudio connection successful!\n\nResponse: {aiResponse}", "Connection Test", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else
-                {
-                    MessageBox.Show($"LMStudio connection failed. Status: {response.StatusCode}\n\nMake sure LMStudio is running on http://127.0.0.1:1234 with meta-llama-3.1-8b-instruct loaded.", "Connection Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"LMStudio connection failed: {ex.Message}\n\nMake sure LMStudio is running on http://127.0.0.1:1234 with meta-llama-3.1-8b-instruct loaded.", "Connection Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
         }
 
         // --- Speaker Diarization Handlers ---
@@ -766,6 +806,11 @@ namespace MeetingNotesApp
             if (float.TryParse(DiarizationThresholdBox.Text, out var threshold))
                 AppSettings.Diarization.Threshold = Math.Clamp(threshold, 0f, 1f);
 
+            AppSettings.Diarization.EnablePostMerge = DiarizationPostMergeCheckBox.IsChecked == true;
+
+            if (float.TryParse(DiarizationPostMergeThresholdBox.Text, out var postMergeThreshold))
+                AppSettings.Diarization.PostMergeThreshold = Math.Clamp(postMergeThreshold, 0.5f, 1.0f);
+
             AppSettings.SaveSettings();
             base.OnClosing(e);
         }
@@ -777,109 +822,200 @@ namespace MeetingNotesApp
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
-        private static string GetWorkspacesFilePath()
+        private static string GetIntegrationsFilePath()
         {
             var appDataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MeetingNotesApp");
-            Directory.CreateDirectory(appDataPath); // Ensure directory exists
-            return Path.Combine(appDataPath, "workspaces.json");
+            Directory.CreateDirectory(appDataPath);
+            return Path.Combine(appDataPath, "integrations.json");
         }
 
-        public static void SaveWorkspaces(ObservableCollection<NotionWorkspaceIntegration> workspaces)
+        public static void SaveIntegrations(ObservableCollection<Integration> integrations)
         {
             try
             {
-                var serializableWorkspaces = workspaces.Select(w => new SerializableWorkspace
+                var serializable = integrations.Select(i =>
                 {
-                    WorkspaceName = w.WorkspaceName,
-                    WorkspaceId = w.WorkspaceId,
-                    ApiKey = w.ApiKey,
-                    SelectedDatabase = w.SelectedDatabase,
-                    Databases = w.Databases?.ToList() ?? new List<NotionDatabase>(),
-                    StatusText = w.StatusText
+                    var si = new SerializableIntegration
+                    {
+                        ProviderType = i.ProviderType.ToString(),
+                        Id = i.Id,
+                        DisplayName = i.DisplayName,
+                        StatusText = i.StatusText
+                    };
+
+                    if (i is NotionIntegration notion)
+                    {
+                        si.ApiKey = notion.ApiKey;
+                        si.SelectedDatabase = notion.SelectedDatabase;
+                        si.Databases = notion.Databases?.ToList() ?? new List<NotionDatabase>();
+                    }
+                    else if (i is CsvExportIntegration csv)
+                    {
+                        si.ExportPath = csv.ExportFolderPath;
+                    }
+                    else if (i is ExcelExportIntegration excel)
+                    {
+                        si.ExportPath = excel.ExportPath;
+                        si.AppendToSingleFile = excel.AppendToSingleFile;
+                    }
+
+                    return si;
                 }).ToList();
 
-                var json = JsonSerializer.Serialize(serializableWorkspaces, new JsonSerializerOptions 
-                { 
-                    WriteIndented = true 
-                });
-                File.WriteAllText(GetWorkspacesFilePath(), json);
+                var json = JsonSerializer.Serialize(serializable, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(GetIntegrationsFilePath(), json);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                // Failed to save workspaces
+                // Failed to save integrations
             }
         }
 
-        public static ObservableCollection<NotionWorkspaceIntegration> LoadWorkspaces()
+        public static ObservableCollection<Integration> LoadIntegrations()
+        {
+            var integrationsPath = GetIntegrationsFilePath();
+
+            // If integrations.json exists, load from it
+            if (File.Exists(integrationsPath))
+            {
+                return LoadIntegrationsFromFile(integrationsPath);
+            }
+
+            // Auto-migrate from workspaces.json if it exists
+            var workspacesPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MeetingNotesApp", "workspaces.json");
+            if (File.Exists(workspacesPath))
+            {
+                return MigrateFromWorkspaces(workspacesPath);
+            }
+
+            return new ObservableCollection<Integration>();
+        }
+
+        private static ObservableCollection<Integration> LoadIntegrationsFromFile(string filePath)
         {
             try
             {
-                var filePath = GetWorkspacesFilePath();
-                if (!File.Exists(filePath))
-                {
-                    return new ObservableCollection<NotionWorkspaceIntegration>();
-                }
-
                 var json = File.ReadAllText(filePath);
-                var serializableWorkspaces = JsonSerializer.Deserialize<List<SerializableWorkspace>>(json);
+                var serialized = JsonSerializer.Deserialize<List<SerializableIntegration>>(json);
 
-                if (serializableWorkspaces == null)
+                if (serialized == null)
+                    return new ObservableCollection<Integration>();
+
+                var integrations = new ObservableCollection<Integration>();
+                foreach (var si in serialized)
                 {
-                    return new ObservableCollection<NotionWorkspaceIntegration>();
+                    Integration? integration = si.ProviderType switch
+                    {
+                        "Notion" => new NotionIntegration
+                        {
+                            Id = si.Id,
+                            DisplayName = si.DisplayName,
+                            StatusText = si.StatusText ?? "Connected",
+                            StatusColor = Brushes.Green,
+                            ApiKey = si.ApiKey ?? "",
+                            SelectedDatabase = si.SelectedDatabase,
+                            Databases = new ObservableCollection<NotionDatabase>(si.Databases ?? new List<NotionDatabase>())
+                        },
+                        "CsvExport" => new CsvExportIntegration
+                        {
+                            Id = si.Id,
+                            DisplayName = si.DisplayName,
+                            StatusText = si.StatusText ?? "Ready",
+                            StatusColor = Brushes.Green,
+                            ExportFolderPath = si.ExportPath
+                        },
+                        "ExcelExport" => new ExcelExportIntegration
+                        {
+                            Id = si.Id,
+                            DisplayName = si.DisplayName,
+                            StatusText = si.StatusText ?? "Ready",
+                            StatusColor = Brushes.Green,
+                            ExportPath = si.ExportPath,
+                            AppendToSingleFile = si.AppendToSingleFile ?? false
+                        },
+                        _ => null
+                    };
+
+                    if (integration != null)
+                        integrations.Add(integration);
                 }
 
-                var workspaces = new ObservableCollection<NotionWorkspaceIntegration>();
-                foreach (var sw in serializableWorkspaces)
+                return integrations;
+            }
+            catch (Exception)
+            {
+                return new ObservableCollection<Integration>();
+            }
+        }
+
+        private static ObservableCollection<Integration> MigrateFromWorkspaces(string workspacesPath)
+        {
+            try
+            {
+                var json = File.ReadAllText(workspacesPath);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if (root.ValueKind != JsonValueKind.Array)
+                    return new ObservableCollection<Integration>();
+
+                var integrations = new ObservableCollection<Integration>();
+                foreach (var sw in root.EnumerateArray())
                 {
-                    workspaces.Add(new NotionWorkspaceIntegration
+                    var workspaceName = sw.TryGetProperty("WorkspaceName", out var wn) ? wn.GetString() ?? "" : "";
+                    var workspaceId = sw.TryGetProperty("WorkspaceId", out var wi) ? wi.GetString() ?? Guid.NewGuid().ToString("N")[..16] : Guid.NewGuid().ToString("N")[..16];
+                    var apiKey = sw.TryGetProperty("ApiKey", out var ak) ? ak.GetString() ?? "" : "";
+                    var statusText = sw.TryGetProperty("StatusText", out var st) ? st.GetString() ?? "Connected" : "Connected";
+
+                    NotionDatabase? selectedDb = null;
+                    if (sw.TryGetProperty("SelectedDatabase", out var sdProp) && sdProp.ValueKind == JsonValueKind.Object)
                     {
-                        WorkspaceName = sw.WorkspaceName,
-                        WorkspaceId = sw.WorkspaceId,
-                        ApiKey = sw.ApiKey,
-                        SelectedDatabase = sw.SelectedDatabase,
-                        Databases = new ObservableCollection<NotionDatabase>(sw.Databases ?? new List<NotionDatabase>()),
-                        StatusText = sw.StatusText ?? "Connected",
+                        selectedDb = new NotionDatabase
+                        {
+                            Name = sdProp.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "",
+                            Id = sdProp.TryGetProperty("Id", out var id) ? id.GetString() ?? "" : "",
+                            Type = sdProp.TryGetProperty("Type", out var t) ? t.GetString() ?? "Database" : "Database"
+                        };
+                    }
+
+                    var databases = new ObservableCollection<NotionDatabase>();
+                    if (sw.TryGetProperty("Databases", out var dbArray) && dbArray.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var dbEl in dbArray.EnumerateArray())
+                        {
+                            databases.Add(new NotionDatabase
+                            {
+                                Name = dbEl.TryGetProperty("Name", out var dn) ? dn.GetString() ?? "" : "",
+                                Id = dbEl.TryGetProperty("Id", out var di) ? di.GetString() ?? "" : "",
+                                Type = dbEl.TryGetProperty("Type", out var dt) ? dt.GetString() ?? "Database" : "Database"
+                            });
+                        }
+                    }
+
+                    integrations.Add(new NotionIntegration
+                    {
+                        Id = workspaceId,
+                        DisplayName = workspaceName,
+                        ApiKey = apiKey,
+                        SelectedDatabase = selectedDb,
+                        Databases = databases,
+                        StatusText = statusText,
                         StatusColor = Brushes.Green
                     });
                 }
 
-                return workspaces;
+                // Save in new format (auto-migration)
+                SaveIntegrations(integrations);
+
+                // Keep old file as backup (per CLAUDE.md edge case)
+                return integrations;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                // Failed to load workspaces
-                return new ObservableCollection<NotionWorkspaceIntegration>();
+                return new ObservableCollection<Integration>();
             }
         }
-    }
-
-    // Serializable version without Brush (which can't be serialized)
-    public class SerializableWorkspace
-    {
-        public string WorkspaceName { get; set; }
-        public string WorkspaceId { get; set; }
-        public string ApiKey { get; set; }
-        public NotionDatabase SelectedDatabase { get; set; }
-        public List<NotionDatabase> Databases { get; set; }
-        public string StatusText { get; set; }
-    }
-
-    public class NotionWorkspaceIntegration
-    {
-        public string WorkspaceName { get; set; }
-        public string WorkspaceId { get; set; }
-        public string ApiKey { get; set; }
-        public NotionDatabase SelectedDatabase { get; set; }
-        public ObservableCollection<NotionDatabase> Databases { get; set; }
-        public string StatusText { get; set; }
-        public Brush StatusColor { get; set; }
-    }
-
-    public class NotionDatabase
-    {
-        public string Name { get; set; }
-        public string Id { get; set; }
-        public string Type { get; set; } // "Database" or "Page"
     }
 
     /// <summary>
@@ -935,15 +1071,38 @@ namespace MeetingNotesApp
     public class DiarizationSettings
     {
         public int NumSpeakers { get; set; } = -1;         // -1 = auto-detect number of speakers
-        public float Threshold { get; set; } = 0.7f;       // Clustering threshold (lower = more speakers, higher = fewer)
+        public float Threshold { get; set; } = 0.85f;      // Clustering threshold (higher = fewer speakers, recommended 0.80-0.90)
         public float MinDurationOn { get; set; } = 0.5f;   // Minimum speech segment duration in seconds
-        public float MinDurationOff { get; set; } = 0.5f;  // Minimum silence gap between segments in seconds
+        public float MinDurationOff { get; set; } = 0.8f;  // Minimum silence gap between segments in seconds
         public DiarizationSegmentationModelType SelectedSegmentationModel { get; set; } = DiarizationSegmentationModelType.Pyannote3;
+        public bool EnablePostMerge { get; set; } = true;   // Merge similar-sounding speakers after diarization
+        public float PostMergeThreshold { get; set; } = 0.75f; // Cosine similarity threshold for merging (0.5-1.0)
     }
 
     public class ASRSettings
     {
         public ASRModelType SelectedModel { get; set; } = ASRModelType.MoonshineTiny;
+    }
+
+    /// <summary>
+    /// IMultiValueConverter that returns true when all bound values are equal.
+    /// Used by SidebarButtonStyle to compare button Tag with SelectedSettingsPage.
+    /// </summary>
+    public class EqualityConverter : IMultiValueConverter
+    {
+        public static readonly EqualityConverter Instance = new();
+
+        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (values.Length < 2 || values[0] == null || values[1] == null)
+                return false;
+            return values[0].ToString() == values[1].ToString();
+        }
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     public static class AppSettings
